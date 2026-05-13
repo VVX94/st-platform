@@ -22,7 +22,19 @@ class RegistryTests(unittest.TestCase):
     def test_algorithm_filtering_works(self) -> None:
         algorithms = list(self.service.list_algorithms(TaskType.DOMAIN_DETECTION))
         algorithm_ids = {item["algorithm_id"] for item in algorithms}
-        self.assertEqual({"mock-domain", "spagcn", "spagcn-lite"}, algorithm_ids)
+        self.assertEqual(
+            {
+                "ccst",
+                "const",
+                "deepst",
+                "graphst",
+                "mock-domain",
+                "sedr",
+                "spagcn",
+                "spagcn-lite",
+            },
+            algorithm_ids,
+        )
 
 
 if __name__ == "__main__":

@@ -83,6 +83,39 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 def _default_parameters_for_demo(task_type: TaskType, algorithm_id: str) -> Dict[str, Any]:
     algorithm_defaults = {
+        "ccst": {
+            "n_clusters": 3,
+            "neighbor_k": 3,
+            "epochs": 2,
+            "hidden": 4,
+            "random_state": 0,
+        },
+        "const": {
+            "n_clusters": 3,
+            "neighbor_k": 3,
+            "epochs": 2,
+            "random_state": 0,
+        },
+        "deepst": {
+            "n_clusters": 3,
+            "neighbor_k": 3,
+            "pre_epochs": 1,
+            "epochs": 1,
+            "random_state": 0,
+        },
+        "graphst": {
+            "n_clusters": 3,
+            "neighbor_k": 3,
+            "epochs": 2,
+            "dim_output": 4,
+            "random_state": 0,
+        },
+        "sedr": {
+            "n_clusters": 3,
+            "neighbor_k": 3,
+            "epochs": 2,
+            "random_state": 0,
+        },
         "spagcn": {
             "n_clusters": 3,
             "neighbor_k": 3,

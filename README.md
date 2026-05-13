@@ -54,15 +54,22 @@ python -m st_platform run-demo --task domain_detection --algorithm spagcn-lite
 python -m unittest discover -s tests
 ```
 
-## SpaGCN 环境
+## 真实空间域算法环境
 
-`spagcn` 使用仓库中的真实 SpaGCN 包，需要额外依赖；`spagcn-lite` 是无重型依赖的 fallback。
+`spagcn`、`graphst`、`sedr`、`ccst`、`const`、`deepst` 使用仓库中的真实算法代码，需要额外依赖；`spagcn-lite` 是无重型依赖的 fallback。
 
 ```bash
 uv venv .venv-spagcn
-UV_CACHE_DIR=/tmp/uv-cache uv pip install --python .venv-spagcn/bin/python -e . -e ../SpaGCN/SpaGCN_package
+UV_CACHE_DIR=/tmp/uv-cache uv pip install --python .venv-spagcn/bin/python -e . -e ../SpaGCN/SpaGCN_package -e ../GraphST -e ../SEDR pot torch-geometric opencv-python scikit-image torchvision scikit-network python-louvain
 .venv-spagcn/bin/python -m st_platform run-demo --task domain_detection --algorithm spagcn
+.venv-spagcn/bin/python -m st_platform run-demo --task domain_detection --algorithm graphst
+.venv-spagcn/bin/python -m st_platform run-demo --task domain_detection --algorithm sedr
+.venv-spagcn/bin/python -m st_platform run-demo --task domain_detection --algorithm ccst
+.venv-spagcn/bin/python -m st_platform run-demo --task domain_detection --algorithm const
+.venv-spagcn/bin/python -m st_platform run-demo --task domain_detection --algorithm deepst
 ```
+
+`const` 当前复用 conST 的模型编码器路径接入；原仓库训练入口依赖 `torch_sparse`，在本地 PyTorch/CUDA 组合不匹配时可先不安装。
 
 ## 开发路线
 

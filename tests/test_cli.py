@@ -10,6 +10,89 @@ from st_platform.tasks import TaskType
 
 
 class CliTests(unittest.TestCase):
+    def test_ccst_demo_uses_algorithm_specific_defaults(self) -> None:
+        parameters = _default_parameters_for_demo(
+            task_type=TaskType.DOMAIN_DETECTION,
+            algorithm_id="ccst",
+        )
+
+        self.assertEqual(
+            {
+                "n_clusters": 3,
+                "neighbor_k": 3,
+                "epochs": 2,
+                "hidden": 4,
+                "random_state": 0,
+            },
+            parameters,
+        )
+
+    def test_const_demo_uses_algorithm_specific_defaults(self) -> None:
+        parameters = _default_parameters_for_demo(
+            task_type=TaskType.DOMAIN_DETECTION,
+            algorithm_id="const",
+        )
+
+        self.assertEqual(
+            {
+                "n_clusters": 3,
+                "neighbor_k": 3,
+                "epochs": 2,
+                "random_state": 0,
+            },
+            parameters,
+        )
+
+    def test_deepst_demo_uses_algorithm_specific_defaults(self) -> None:
+        parameters = _default_parameters_for_demo(
+            task_type=TaskType.DOMAIN_DETECTION,
+            algorithm_id="deepst",
+        )
+
+        self.assertEqual(
+            {
+                "n_clusters": 3,
+                "neighbor_k": 3,
+                "pre_epochs": 1,
+                "epochs": 1,
+                "random_state": 0,
+            },
+            parameters,
+        )
+
+    def test_graphst_demo_uses_algorithm_specific_defaults(self) -> None:
+        parameters = _default_parameters_for_demo(
+            task_type=TaskType.DOMAIN_DETECTION,
+            algorithm_id="graphst",
+        )
+
+        self.assertEqual(
+            {
+                "n_clusters": 3,
+                "neighbor_k": 3,
+                "epochs": 2,
+                "dim_output": 4,
+                "random_state": 0,
+            },
+            parameters,
+        )
+
+    def test_sedr_demo_uses_algorithm_specific_defaults(self) -> None:
+        parameters = _default_parameters_for_demo(
+            task_type=TaskType.DOMAIN_DETECTION,
+            algorithm_id="sedr",
+        )
+
+        self.assertEqual(
+            {
+                "n_clusters": 3,
+                "neighbor_k": 3,
+                "epochs": 2,
+                "random_state": 0,
+            },
+            parameters,
+        )
+
     def test_spagcn_demo_uses_algorithm_specific_defaults(self) -> None:
         parameters = _default_parameters_for_demo(
             task_type=TaskType.DOMAIN_DETECTION,
