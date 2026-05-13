@@ -64,7 +64,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.command == "run-demo":
         task_type = TaskType(args.task)
         demo_data = service.build_demo_dataset()
-        parameters = _default_parameters_for_task(task_type)
+        parameters = _default_parameters_for_demo(
+            task_type=task_type,
+            algorithm_id=args.algorithm,
+        )
         result = service.run(
             task_type=task_type,
             algorithm_id=args.algorithm,
@@ -76,6 +79,26 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     parser.error(f"Unsupported command: {args.command}")
     return 2
+
+
+def _default_parameters_for_demo(task_type: TaskType, algorithm_id: str) -> Dict[str, Any]:
+    algorithm_defaults = {
+        "spagcn": {
+            "n_clusters": 3,
+            "neighbor_k": 3,
+            "num_pcs": 2,
+            "l": 1.0,
+            "max_epochs": 2,
+            "random_state": 0,
+        },
+        "spagcn-lite": {
+            "n_clusters": 3,
+            "neighbor_k": 3,
+            "spatial_weight": 0.25,
+            "random_state": 0,
+        },
+    }
+    return algorithm_defaults.get(algorithm_id, _default_parameters_for_task(task_type))
 
 
 def _default_parameters_for_task(task_type: TaskType) -> Dict[str, Any]:

@@ -12,7 +12,10 @@ license = { text = "MIT" }
 authors = [
   { name = "Codex Scaffold" }
 ]
-dependencies = []
+dependencies = [
+  "numpy>=1.23",
+  "scikit-learn>=1.1"
+]
 
 [project.optional-dependencies]
 dev = [

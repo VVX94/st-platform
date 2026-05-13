@@ -49,7 +49,19 @@ export PYTHONPATH="./src"
 python -m st_platform list-tasks
 python -m st_platform list-algorithms
 python -m st_platform run-demo --task domain_detection --algorithm mock-domain
+python -m st_platform run-demo --task domain_detection --algorithm spagcn
+python -m st_platform run-demo --task domain_detection --algorithm spagcn-lite
 python -m unittest discover -s tests
+```
+
+## SpaGCN 环境
+
+`spagcn` 使用仓库中的真实 SpaGCN 包，需要额外依赖；`spagcn-lite` 是无重型依赖的 fallback。
+
+```bash
+uv venv .venv-spagcn
+UV_CACHE_DIR=/tmp/uv-cache uv pip install --python .venv-spagcn/bin/python -e . -e ../SpaGCN/SpaGCN_package
+.venv-spagcn/bin/python -m st_platform run-demo --task domain_detection --algorithm spagcn
 ```
 
 ## 开发路线

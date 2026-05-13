@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Any, Iterable, Mapping
 
 from st_platform.algorithms.base import Algorithm, AlgorithmOutput, AlgorithmSpec
+from st_platform.algorithms.spagcn import SpaGCNDomainAlgorithm
+from st_platform.algorithms.spagcn_lite import SpaGCNLiteDomainAlgorithm
 from st_platform.data import SpatialDataBundle
 from st_platform.tasks import TaskType
 
@@ -131,6 +133,8 @@ def build_builtin_algorithms() -> Iterable[Algorithm]:
     return [
         DemoQualityControlAlgorithm(),
         MockDomainDetectionAlgorithm(),
+        SpaGCNDomainAlgorithm(),
+        SpaGCNLiteDomainAlgorithm(),
         MockDeconvolutionAlgorithm(),
     ]
 
