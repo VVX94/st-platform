@@ -84,6 +84,7 @@
 - 异步 worker。
 - SQLite 元数据存储。
 - 阿里云 OSS 数据和 artifact 存储。
+- OSS URI 登记和基础预签名上传。
 - 本地小容量临时缓存目录。
 - Docker Compose 部署骨架。
 - h5ad 和 10x Visium 数据读取。
@@ -95,8 +96,7 @@
 
 首版不包含：
 
-- 登录、用户、角色、权限和审计。
-- 浏览器大文件上传。
+- 复杂大文件分片上传和断点续传。
 - 多机/集群调度。
 - 复杂并发任务调度。
 - 完整容器化算法隔离 runner。
@@ -107,6 +107,19 @@
 - 完整论文级指标集。
 
 这些能力作为后续阶段规划。
+
+### 3.3 公开访问策略
+
+本项目定位为公益性质的科研 benchmark 网站，首期不做登录、用户系统、RBAC 或 API 权限校验。所有用户都可以访问 Web 页面、登记数据集、创建 experiment、查看运行记录和下载报告。
+
+为了保护小资源服务器和 OSS 成本，首期只做非身份类保护：
+
+- 文件格式校验。
+- 单次上传和单个 experiment 的规模限制。
+- worker 低并发执行。
+- SQLite queued runs 防止请求线程执行长任务。
+- OSS prefix 隔离和对象命名规范。
+- 明确错误信息和失败状态，避免用户重复提交不可运行任务。
 
 ## 4. 技术架构
 
@@ -181,7 +194,7 @@ deploy/
 | 服务 | 职责 | 初期资源策略 |
 |---|---|---|
 | `web` | 托管 React 静态资源，反向代理 API | 静态服务，保持轻量 |
-| `api` | FastAPI 路由、鉴权、实验配置、状态查询、OSS 上传/下载签名 | 不执行长任务，只创建任务和查询 |
+| `api` | FastAPI 路由、公开 experiment 配置、状态查询、OSS 上传/下载签名 | 不执行长任务，只创建任务和查询 |
 | `worker` | 后台执行 benchmark run、读写 OSS artifacts | 默认低并发，运行后清理本地临时文件 |
 | `sqlite` | 当前元数据存储 | 小文件持久化，可定期备份到 OSS |
 | `oss` | 数据集、运行产物、报告、图表、预测表、模型权重 | 主存储，不依赖服务器大硬盘 |
@@ -212,6 +225,59 @@ deploy/
 - 队列从 SQLite 轮询迁移到 Redis + RQ/Celery/Arq。
 - artifact 继续使用 OSS，只替换索引和签名策略，不迁移大文件回服务器。
 - 重型算法拆分为可选 runner 镜像，避免主 API / worker 镜像过大。
+
+### 4.3 后端框架和数据访问
+
+后端采用 FastAPI + Pydantic schema：
+
+- FastAPI 负责 HTTP API、OpenAPI 文档、请求校验和响应序列化。
+- Pydantic 负责 dataset、experiment、run、metric、artifact 等 request / response schema。
+- SQLite 访问层采用 SQLAlchemy / SQLModel，而不是裸 `sqlite3`，为后续迁移 Postgres 保留路径。
+- 数据访问逻辑集中在 `storage/` repository 层，API 和 worker 不直接拼 SQL。
+- 数据库迁移在首期可以使用轻量初始化脚本，后续再引入 Alembic。
+
+### 4.4 OSS 数据流
+
+OSS 是首期数据和 artifact 主存储：
+
+```text
+browser / user
+  -> request upload target from FastAPI
+  -> upload h5ad / Visium files to OSS by signed URL or server-side streaming
+  -> FastAPI registers dataset metadata and OSS URI in SQLite
+  -> worker downloads required objects to local temp dir
+  -> worker writes reports / tables / plots back to OSS
+  -> FastAPI returns OSS-backed artifact download URL
+```
+
+默认策略：
+
+- 数据集登记支持 `oss://bucket/key` 和 `oss://bucket/prefix/`。
+- 浏览器上传优先使用 OSS 预签名 URL，减少 API 服务器中转大文件。
+- 如果必须服务端转发，API 只做流式转发，不长期保存大文件。
+- artifact 表只保存 URI、backend、kind、checksum、size、created_at 等索引信息。
+- OSS bucket、prefix、生命周期和备份策略后续单独作为部署 sprint 确认。
+
+### 4.5 前端技术栈
+
+前端采用 React + Vite + TypeScript：
+
+- Vite 负责轻量构建和开发服务。
+- TypeScript 约束 API client、页面状态和表格数据类型。
+- 首期前端是 benchmark 管理后台，不做营销站和复杂门户。
+- 图表优先使用轻量方案，空间图可先使用后端生成的 PNG / SVG artifact 展示。
+- 前端构建产物不进入 Git，只进入 Docker web 镜像。
+
+### 4.6 算法运行和镜像策略
+
+Docker 镜像必须保持轻量：
+
+- 主 API 镜像只包含 FastAPI、storage、schema、基础 service。
+- 首期 worker 镜像只包含平台运行所需依赖和轻量算法路径。
+- 不把原始数据、运行结果、模型 checkpoint、演示报告或大型缓存打入镜像。
+- SpaGCN-lite 和轻依赖 smoke path 优先用于部署验收。
+- SpaGCN、GraphST、SEDR、CCST、conST、DeepST 等重依赖算法可先保留为可选 runner 规划，后续拆成独立镜像或独立环境。
+- 每个算法 adapter 必须标注依赖状态、runner 类型和是否支持首期部署 smoke run。
 
 ## 5. 后端模块设计
 
@@ -448,9 +514,16 @@ oss://<bucket>/benchmark_results/<experiment_id>/
 | Method | Path | 说明 |
 |---|---|---|
 | `GET` | `/api/datasets` | 数据集列表 |
-| `POST` | `/api/datasets/register` | 登记本地数据集路径 |
+| `POST` | `/api/datasets/register` | 登记 OSS URI / OSS prefix，开发模式可登记本地路径 |
 | `GET` | `/api/datasets/{dataset_id}` | 数据集详情 |
 | `POST` | `/api/datasets/{dataset_id}/validate` | 重新解析/验证数据集 |
+
+### OSS 上传
+
+| Method | Path | 说明 |
+|---|---|---|
+| `POST` | `/api/uploads/sign` | 为公开匿名用户生成受限 OSS 预签名上传 URL |
+| `POST` | `/api/uploads/complete` | 上传完成后登记对象 URI、大小、checksum 和 dataset metadata |
 
 ### 算法
 
@@ -584,7 +657,8 @@ SQLite runs 表建议增加字段：
 | NMI | 有真实标签 | 必做 |
 | runtime seconds | 所有 run | 必做 |
 | spatial neighbor agreement | 所有 run | 必做 |
-| spatial continuity | 所有 run | 必做 |
+| artifact completeness | 所有 run | 必做 |
+| spatial continuity | 所有 run | 可选 |
 | memory peak | 所有 run | TODO |
 | HOM / COM | 有真实标签 | TODO |
 | CHAOS / PAS | 空间聚类 | TODO |
@@ -596,6 +670,8 @@ SQLite runs 表建议增加字段：
 - 每个 metric 都写入 SQLite。
 - 每个 experiment 生成汇总 CSV。
 - 报告中必须标注哪些指标因为缺少真实标签而未计算。
+
+`core_spatial_v1` 的首期验收只要求 ARI、NMI、runtime seconds、spatial neighbor agreement、artifact completeness。论文级指标和额外空间统计指标后续扩展，不阻塞首期部署闭环。
 
 ## 13. 风险与处理
 
@@ -623,13 +699,42 @@ SQLite runs 表建议增加字段：
 
 ### 14.2 集成测试
 
-- 登记 STARmap、DLPFC、osmFISH。
-- 创建包含多个数据集和多个算法的 experiment。
+- STARmap 作为 smoke demo 数据，至少跑通一个完整 benchmark run。
+- DLPFC 151673 和 osmFISH 首期要求可登记、可解析 metadata，可作为后续 benchmark 数据。
+- 创建包含 STARmap 和首期 smoke 算法的 experiment。
 - worker 执行 run 并写入 metrics/artifacts。
 - experiment 详情 API 返回完整状态。
 - 报告 API 返回可下载 artifact。
 
-### 14.3 前端验收
+### 14.3 部署验收
+
+首期 Docker Compose 部署必须满足：
+
+- Web 页面可打开。
+- API health check 可访问。
+- SQLite metadata store 可初始化。
+- OSS 配置可验证，至少能写入和读取一个测试 artifact。
+- 用户可通过 Web 登记一个 STARmap smoke dataset。
+- 用户可创建一个 experiment。
+- worker 可消费 queued run 并完成至少一个 smoke run。
+- metrics 写入 SQLite。
+- report / table / plot artifact 写入 OSS。
+- Web 可查看 run 状态、指标表和报告下载入口。
+- 本地临时目录在 run 结束后被清理。
+
+### 14.4 Harness / CI 审计验收
+
+每个 sprint 必须满足：
+
+- 有 task spec 或明确关联的 task。
+- 有 sprint contract。
+- 有 generator handoff。
+- 有 evaluator report。
+- 有 Git commit。
+- 生成产物只写 manifest，不进入 Git。
+- Evaluator 报告中列出执行过的命令、结果和未解决风险。
+
+### 14.5 前端验收
 
 - 数据集页面能展示 shape 和标签列。
 - 算法页面能展示算法状态。
@@ -650,7 +755,8 @@ SQLite runs 表建议增加字段：
 
 验收：
 
-- STARmap、DLPFC、osmFISH 能登记并解析 metadata。
+- STARmap 能作为 smoke demo 登记并解析 metadata。
+- DLPFC、osmFISH 能登记并解析 metadata，完整 benchmark 可放到后续阶段。
 
 ### 阶段 2：Experiment 和 Worker
 
@@ -677,6 +783,7 @@ SQLite runs 表建议增加字段：
 验收：
 
 - 完成一个小型 experiment 后，报告目录完整生成。
+- 首期 `core_spatial_v1` 至少包含 ARI、NMI、runtime、spatial neighbor agreement、artifact completeness。
 
 ### 阶段 4：React 管理后台
 
@@ -707,21 +814,22 @@ SQLite runs 表建议增加字段：
 
 ## 16. 当前默认决策
 
-- 交付形态：FastAPI + React。
+- 交付形态：FastAPI + Pydantic + React/Vite/TypeScript。
 - 执行模型：SQLite queued runs + 低并发 worker，后续可迁移 Redis 队列。
 - 存储：SQLite 元数据 + 阿里云 OSS 数据/artifact，后续可迁移 Postgres 元数据。
 - 数据输入：登记 OSS h5ad / Visium 前缀，开发模式可用本地路径。
+- 访问策略：公益科研网站，公开匿名使用，不做登录、用户、RBAC 或 API 权限校验。
 - 任务范围：空间域/聚类 benchmark。
-- 指标范围：首版核心 + 空间指标，完整论文指标后续实现。
+- 指标范围：首期 `core_spatial_v1`，完整论文指标后续实现。
 - 算法范围：当前 7 个 + STAGATE + SpaceFlow。
 - 管理后台：五个核心模块，不做登录/RBAC。
+- 算法部署：主镜像轻量，重依赖算法后续拆分可选 runner 镜像。
 
 ## 17. 后续 TODO
 
-- 明确 SQLite 是否直接使用标准库 `sqlite3`，还是引入 SQLAlchemy。
-- 明确 React 工程使用 Vite 还是其他脚手架。
 - 明确 FastAPI 项目启动命令和端口。
 - 设计 `ExperimentSpec` 的最终 JSON schema。
+- 明确 OSS bucket、prefix、RAM 权限、签名 URL 和生命周期策略。
 - 确认 DLPFC 151673 的 ground truth label 列。
 - 确认 osmFISH 的 label 列和空间坐标键。
 - 评估 STAGATE / SpaceFlow 的最小可运行参数。

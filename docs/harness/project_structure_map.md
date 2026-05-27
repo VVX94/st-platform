@@ -16,7 +16,7 @@
 - 多个空间域识别算法 adapter。
 - STARmap 真实数据演示结果。
 
-当前还不是完整 Web benchmark 平台。API、Web、持久化数据库、异步队列、部署编排、权限和生产监控仍待建设。
+当前还不是完整 Web benchmark 平台。API、Web、持久化数据库、异步队列、部署编排、公开访问保护和生产监控仍待建设。
 
 ## 2. 顶层结构
 
@@ -186,11 +186,9 @@ src/st_platform/
 ├─ io/                           # h5ad / Visium reader
 ├─ storage/                      # database repositories and artifact index
 ├─ worker/                       # async worker entrypoint and queue adapter
-└─ auth/                         # login / users / roles / audit, if enabled
 
 web/                             # React 管理后台
 deploy/                          # Docker Compose, env examples, reverse proxy
 ```
 
 这些目录尚未存在，后续由 Generator 在对应 sprint 中创建。
-
