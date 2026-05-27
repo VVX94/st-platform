@@ -28,6 +28,17 @@ def _run_to_bundle_params(run: RunModel) -> dict:
         return {}
 
 
+def _relative_uri(absolute_path: str) -> str:
+    """Convert an absolute path under the project root to a relative path."""
+    abs_p = Path(absolute_path).resolve()
+    project_root = Path(__file__).resolve().parents[4]
+    try:
+        return str(abs_p.relative_to(project_root))
+    except ValueError:
+        # Path is outside project root; return as-is (shouldn't happen)
+        return absolute_path
+
+
 def _generate_run_reports(run_id: str, result, db: Session) -> None:
     """Generate CSV/PNG report artifacts after a successful run.
 
@@ -58,7 +69,7 @@ def _generate_run_reports(run_id: str, result, db: Session) -> None:
         art = ArtifactModel(
             run_id=run_id,
             kind="metrics_csv",
-            uri=csv_path,
+            uri=_relative_uri(csv_path),
             description="Run metrics as CSV.",
         )
         db.add(art)
@@ -72,7 +83,7 @@ def _generate_run_reports(run_id: str, result, db: Session) -> None:
         art = ArtifactModel(
             run_id=run_id,
             kind="metrics_bar_plot",
-            uri=bar_path,
+            uri=_relative_uri(bar_path),
             description="Bar chart of run metrics.",
         )
         db.add(art)
@@ -100,7 +111,7 @@ def _generate_run_reports(run_id: str, result, db: Session) -> None:
             art = ArtifactModel(
                 run_id=run_id,
                 kind="domain_predictions_csv",
-                uri=dom_csv_path,
+                uri=_relative_uri(dom_csv_path),
                 description="Domain predictions as CSV.",
             )
             db.add(art)
@@ -114,7 +125,7 @@ def _generate_run_reports(run_id: str, result, db: Session) -> None:
             art = ArtifactModel(
                 run_id=run_id,
                 kind="domain_grid_plot",
-                uri=grid_path,
+                uri=_relative_uri(grid_path),
                 description="Scatter plot of spatial domain predictions.",
             )
             db.add(art)
@@ -303,18 +314,13 @@ def poll_runs(
             processed += 1
             continue
         else:
-            # Fallback: build a minimal bundle from dataset_info
-            data = SpatialDataBundle(
-                dataset=DatasetRef(
-                    dataset_id=dataset_info.get("dataset_id", "unknown"),
-                    platform=ds_platform or "visium",
-                    sample_id=dataset_info.get("sample_id", "unknown"),
-                ),
-                assets=[
-                    DataAsset(kind="counts_table", key="counts", description="demo counts"),
-                    DataAsset(kind="spatial_coordinates", key="coordinates", description="demo coords"),
-                ],
+            repo.mark_failed(
+                run.run_id,
+                "No dataset URI provided and no demo data builder available. "
+                "Please register a dataset or ensure the worker has demo data support.",
             )
+            processed += 1
+            continue
 
         params = _run_to_bundle_params(run)
 
@@ -363,11 +369,19 @@ def poll_runs(
                     result_metrics, result, ground_truth_labels, features=features_array
                 )
 
+            # Normalize algorithm artifact URIs to relative paths
+            normalized_artifacts = []
+            for art in (result.artifacts or []):
+                art_copy = dict(art)
+                if "uri" in art_copy and art_copy["uri"]:
+                    art_copy["uri"] = _relative_uri(art_copy["uri"])
+                normalized_artifacts.append(art_copy)
+
             repo.mark_succeeded(
                 run.run_id,
                 summary=result.summary,
                 metrics=result_metrics,
-                artifacts=result.artifacts,
+                artifacts=normalized_artifacts,
             )
             # Generate report artifacts (non-fatal)
             try:
