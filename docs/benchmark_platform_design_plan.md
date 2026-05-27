@@ -525,33 +525,54 @@ oss://<bucket>/benchmark_results/<experiment_id>/
 - 展示算法对比图。
 - 下载 CSV、PNG、Markdown 报告。
 
-## 11. Worker 设计
+## 11. Worker 和队列设计
 
-首版采用单后台 worker 进程：
+首期正式采用 SQLite queued runs + 低并发 worker 轮询。这样可以减少 Redis / Celery / RQ 等常驻服务，降低初期阿里云单机部署和 Docker 镜像维护成本。
+
+首期执行链路：
 
 ```text
 FastAPI API
-  -> 写入 SQLite queued runs
-  -> worker 轮询 queued runs
-  -> 标记 running
+  -> 写入 SQLite runs(status=queued)
+  -> worker 低频轮询 queued runs
+  -> 获取一个 run 并标记 running
+  -> 从 OSS 下载必要数据到本地临时目录
   -> 调用 BenchmarkRunner / LocalRunner
-  -> 写入 metrics 和 artifacts
+  -> metrics 写入 SQLite
+  -> artifacts 写入 OSS
+  -> 清理本地临时目录
   -> 标记 succeeded 或 failed
 ```
 
 约束：
 
-- 首版顺序执行。
-- 不做并发。
+- 首期默认单 worker 顺序执行。
+- 可保留配置项支持极低并发，但默认不打开。
 - 不做取消。
 - 不做自动重试。
+- 不引入 Redis / Celery / RQ。
 - 单个算法崩溃时应记录 run failed，不影响其他 queued run。
+- worker 启动时应能识别上次异常退出遗留的 `running` run，并标记为 failed 或 stale。
+- worker 只在 run 期间占用本地临时目录，任务结束后必须清理。
 
-后续可替换为：
+SQLite runs 表建议增加字段：
 
-- Celery / RQ。
-- Docker runner。
-- Kubernetes job。
+| 字段 | 说明 |
+|---|---|
+| `queued_at` | 入队时间 |
+| `started_at` | 开始执行时间 |
+| `finished_at` | 结束时间 |
+| `heartbeat_at` | worker 最近心跳 |
+| `worker_id` | 执行该 run 的 worker 标识 |
+| `attempt` | 当前尝试次数，首期默认 1 |
+| `temp_dir` | 运行期临时目录，任务结束后应清空 |
+
+后续升级路径：
+
+- Redis + RQ/Celery/Arq 队列。
+- Postgres metadata store。
+- 容器化算法 runner。
+- Kubernetes job 或其他集群调度。
 
 ## 12. 指标体系
 
