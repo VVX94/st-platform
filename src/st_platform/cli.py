@@ -63,6 +63,22 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     if args.command == "run-demo":
         task_type = TaskType(args.task)
+        # Validate algorithm exists and matches task type
+        import sys
+        try:
+            algo = service.algorithm_registry.get(args.algorithm)
+        except KeyError:
+            available = [a.spec.algorithm_id for a in service.algorithm_registry.list_for_task(task_type)]
+            print(f"Error: Algorithm '{args.algorithm}' not found.", file=sys.stderr)
+            if available:
+                print(f"Available algorithms for '{args.task}': {', '.join(available)}", file=sys.stderr)
+            return 1
+        if algo.spec.task_type != task_type:
+            print(f"Error: Algorithm '{args.algorithm}' is registered for '{algo.spec.task_type.value}', not '{task_type.value}'.", file=sys.stderr)
+            available = [a.spec.algorithm_id for a in service.algorithm_registry.list_for_task(task_type)]
+            if available:
+                print(f"Available algorithms for '{args.task}': {', '.join(available)}", file=sys.stderr)
+            return 1
         demo_data = service.build_demo_dataset()
         parameters = _default_parameters_for_demo(
             task_type=task_type,
@@ -128,6 +144,18 @@ def _default_parameters_for_demo(task_type: TaskType, algorithm_id: str) -> Dict
             "n_clusters": 3,
             "neighbor_k": 3,
             "spatial_weight": 0.25,
+            "random_state": 0,
+        },
+        "stagate-lite": {
+            "n_clusters": 3,
+            "neighbor_k": 3,
+            "spatial_weight": 0.3,
+            "random_state": 0,
+        },
+        "spaceflow-lite": {
+            "n_clusters": 3,
+            "neighbor_k": 3,
+            "spatial_weight": 0.3,
             "random_state": 0,
         },
     }
