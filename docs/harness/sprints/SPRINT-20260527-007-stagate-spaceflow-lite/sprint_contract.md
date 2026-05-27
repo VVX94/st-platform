@@ -2,7 +2,7 @@
 
 Sprint ID：SPRINT-20260527-007-stagate-spaceflow-lite
 关联任务：TASK-20260527-001-runtime-smoke-platform
-状态：pending
+状态：accepted
 
 ## 本轮目标
 

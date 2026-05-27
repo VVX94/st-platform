@@ -2,7 +2,7 @@
 
 Sprint ID：SPRINT-20260527-008-web-benchmark-experience  
 关联任务：ST Platform deployable benchmark Web platform  
-状态：pending  
+状态：accepted  
 默认执行 agent：Planner -> Generator -> Evaluator
 
 ## 本轮目标

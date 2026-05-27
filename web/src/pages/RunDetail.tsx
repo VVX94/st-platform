@@ -1,166 +1,128 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { api, type Run, type Metric, type Artifact } from "../api/client";
+import { Card, Descriptions, Timeline, Button, Tag, Empty } from "antd";
+import { ArrowLeftOutlined, ClockCircleOutlined } from "@ant-design/icons";
+import { useTranslation } from "react-i18next";
+import ReactECharts from "echarts-for-react";
+import { api, type Run } from "../api/client";
+import StatusTag from "../components/StatusTag";
 
-function statusBadge(status: string): React.CSSProperties {
-  const colors: Record<string, string> = {
-    queued: "#6c757d",
-    running: "#0d6efd",
-    succeeded: "#198754",
-    failed: "#dc3545",
-  };
-  return {
-    display: "inline-block",
-    padding: "0.15rem 0.5rem",
-    borderRadius: "4px",
-    fontSize: "0.8rem",
-    fontWeight: 600,
-    color: "#fff",
-    backgroundColor: colors[status] || "#6c757d",
-  };
+function formatDuration(started: string | null, finished: string | null): string {
+  if (!started) return "-";
+  const start = new Date(started).getTime();
+  const end = finished ? new Date(finished).getTime() : Date.now();
+  const seconds = ((end - start) / 1000).toFixed(1);
+  return `${seconds}s`;
 }
 
 export default function RunDetail() {
+  const { t } = useTranslation();
   const { runId } = useParams<{ runId: string }>();
   const [run, setRun] = useState<Run | null>(null);
-  const [metrics, setMetrics] = useState<Metric[]>([]);
-  const [artifacts, setArtifacts] = useState<Artifact[]>([]);
-  const [error, setError] = useState<string>("");
+  const [metrics, setMetrics] = useState<Record<string, number>>({});
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if (!runId) return;
-    api
-      .get<Run>(`/api/runs/${runId}`)
-      .then(setRun)
-      .catch((e) => setError(String(e)));
-    api
-      .getRunMetrics(runId)
-      .then(setMetrics)
-      .catch(() => {});
-    api
-      .getRunArtifacts(runId)
-      .then(setArtifacts)
-      .catch(() => {});
+    api.get<Run>(`/api/runs/${runId}`).then(setRun).catch((e) => setError(String(e)));
+    api.getRunMetrics(runId).then((m) => {
+      const map: Record<string, number> = {};
+      m.forEach((metric) => { map[metric.name] = metric.value; });
+      setMetrics(map);
+    }).catch(() => {});
   }, [runId]);
 
-  if (error) {
-    return (
-      <div>
-        <h1>Run Detail</h1>
-        <p style={{ color: "red" }}>{error}</p>
-        <Link to="/experiments">Back to Experiments</Link>
-      </div>
-    );
-  }
+  if (error) return <div style={{ color: "#DC2626" }}>{error}</div>;
+  if (!run) return <Empty description={t("common.loading")} />;
 
-  if (!run) {
-    return <p>Loading...</p>;
-  }
+  const allMetrics = { ...run.metrics, ...metrics };
+  const metricNames = Object.keys(allMetrics);
 
-  const th: React.CSSProperties = {
-    textAlign: "left",
-    padding: "0.5rem 1rem",
-    borderBottom: "2px solid #ddd",
-  };
-  const td: React.CSSProperties = {
-    padding: "0.5rem 1rem",
-    borderBottom: "1px solid #eee",
-  };
-  const labelStyle: React.CSSProperties = {
-    fontWeight: 600,
-    padding: "0.25rem 0",
-    color: "#555",
-  };
+  const barOption = metricNames.length > 0 ? {
+    tooltip: { trigger: "axis" as const },
+    grid: { left: 160, right: 60, top: 10, bottom: 10 },
+    xAxis: { type: "value" as const },
+    yAxis: {
+      type: "category" as const,
+      data: metricNames.map((m) => t(`metrics.${m}`, m)),
+      axisLabel: { width: 140, overflow: "truncate" },
+    },
+    series: [{
+      type: "bar" as const,
+      data: metricNames.map((m) => allMetrics[m]),
+      itemStyle: { color: "#1E40AF", borderRadius: [0, 4, 4, 0] },
+      label: { show: true, position: "right" as const, formatter: (p: { value: number }) => p.value.toFixed(4) },
+    }],
+  } : null;
+
+  const timelineItems = [];
+  if (run.created_at) {
+    timelineItems.push({ color: "gray", children: <span>Created <ClockCircleOutlined /> {new Date(run.created_at).toLocaleString()}</span> });
+  }
+  if (run.started_at) {
+    timelineItems.push({ color: "blue", children: <span>Started <ClockCircleOutlined /> {new Date(run.started_at).toLocaleString()}</span> });
+  }
+  if (run.finished_at) {
+    timelineItems.push({
+      color: run.status === "succeeded" ? "green" : "red",
+      children: <span>{run.status === "succeeded" ? "Succeeded" : "Failed"} <ClockCircleOutlined /> {new Date(run.finished_at).toLocaleString()}</span>,
+    });
+  }
 
   return (
     <div>
-      <Link to="/experiments" style={{ color: "#0d6efd", textDecoration: "none" }}>
-        &larr; Back to Experiments
+      <Link to="/experiments">
+        <Button icon={<ArrowLeftOutlined />} type="link" style={{ padding: 0, marginBottom: 16 }}>{t("common.back")}</Button>
       </Link>
-      <h1 style={{ marginTop: "0.5rem" }}>Run Detail</h1>
+      <h2 style={{ fontFamily: "Poppins, sans-serif", fontWeight: 600, marginBottom: 24 }}>{t("runDetail.title")}</h2>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginTop: "1rem" }}>
-        <div>
-          <div style={labelStyle}>Run ID</div>
-          <div>{run.run_id}</div>
-        </div>
-        <div>
-          <div style={labelStyle}>Algorithm</div>
-          <div>{run.algorithm_id}</div>
-        </div>
-        <div>
-          <div style={labelStyle}>Task Type</div>
-          <div>{run.task_type}</div>
-        </div>
-        <div>
-          <div style={labelStyle}>Status</div>
-          <div>
-            <span style={statusBadge(run.status)}>{run.status}</span>
-          </div>
-        </div>
-        <div>
-          <div style={labelStyle}>Started At</div>
-          <div>{run.started_at ? new Date(run.started_at).toLocaleString() : "-"}</div>
-        </div>
-        <div>
-          <div style={labelStyle}>Finished At</div>
-          <div>{run.finished_at ? new Date(run.finished_at).toLocaleString() : "-"}</div>
-        </div>
-      </div>
+      <Descriptions size="small" bordered column={2} style={{ marginBottom: 24 }}>
+        <Descriptions.Item label={t("common.id")}>{run.run_id}</Descriptions.Item>
+        <Descriptions.Item label={t("common.status")}><StatusTag status={run.status} /></Descriptions.Item>
+        <Descriptions.Item label={t("runDetail.algorithm")}>{run.algorithm_id}</Descriptions.Item>
+        <Descriptions.Item label={t("algorithms.taskType")}>{run.task_type}</Descriptions.Item>
+        <Descriptions.Item label={t("runDetail.startedAt")}>{run.started_at ? new Date(run.started_at).toLocaleString() : "-"}</Descriptions.Item>
+        <Descriptions.Item label={t("runDetail.finishedAt")}>{run.finished_at ? new Date(run.finished_at).toLocaleString() : "-"}</Descriptions.Item>
+        <Descriptions.Item label={t("runDetail.duration")}>{formatDuration(run.started_at, run.finished_at)}</Descriptions.Item>
+        {run.experiment_id && (
+          <Descriptions.Item label={t("runDetail.experiment")}>
+            <Link to={`/reports/${run.experiment_id}`}>{run.experiment_id.slice(0, 8)}...</Link>
+          </Descriptions.Item>
+        )}
+      </Descriptions>
+
+      {timelineItems.length > 0 && (
+        <Card size="small" title={t("runDetail.executionTimeline")} style={{ marginBottom: 24 }}>
+          <Timeline items={timelineItems} />
+        </Card>
+      )}
+
+      {metricNames.length > 0 && (
+        <Card size="small" title={t("runDetail.metrics")} style={{ marginBottom: 24 }}>
+          <ReactECharts option={barOption} style={{ height: Math.max(200, metricNames.length * 36 + 20) }} />
+        </Card>
+      )}
 
       {run.error && (
-        <div style={{ marginTop: "1.5rem" }}>
-          <h3 style={{ color: "#dc3545" }}>Error</h3>
-          <pre style={{ backgroundColor: "#f8d7da", padding: "1rem", borderRadius: "4px", overflow: "auto" }}>
-            {run.error}
-          </pre>
-        </div>
+        <Card size="small" title={t("runDetail.errorLog")} style={{ marginBottom: 24 }}>
+          <pre style={{ background: "#FEF2F2", padding: 12, borderRadius: 6, color: "#991B1B", whiteSpace: "pre-wrap", fontSize: 13 }}>{run.error}</pre>
+        </Card>
       )}
 
-      {metrics.length > 0 && (
-        <div style={{ marginTop: "1.5rem" }}>
-          <h2>Metrics</h2>
-          <table style={{ width: "100%", borderCollapse: "collapse", marginTop: "0.5rem" }}>
-            <thead>
-              <tr>
-                <th style={th}>Metric</th>
-                <th style={th}>Value</th>
-              </tr>
-            </thead>
-            <tbody>
-              {metrics.map((m) => (
-                <tr key={m.metric_id}>
-                  <td style={td}>{m.name}</td>
-                  <td style={td}>{m.value.toFixed(4)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {artifacts.length > 0 && (
-        <div style={{ marginTop: "1.5rem" }}>
-          <h2>Artifacts</h2>
-          <table style={{ width: "100%", borderCollapse: "collapse", marginTop: "0.5rem" }}>
-            <thead>
-              <tr>
-                <th style={th}>Kind</th>
-                <th style={th}>URI</th>
-                <th style={th}>Description</th>
-              </tr>
-            </thead>
-            <tbody>
-              {artifacts.map((a) => (
-                <tr key={a.artifact_id}>
-                  <td style={td}>{a.kind}</td>
-                  <td style={td}>{a.uri}</td>
-                  <td style={td}>{a.description}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {run.artifacts && run.artifacts.length > 0 && (
+        <Card size="small" title={t("runDetail.artifacts")} style={{ marginBottom: 24 }}>
+          <ul style={{ paddingLeft: 20 }}>
+            {run.artifacts.map((a, i) => (
+              <li key={i} style={{ marginBottom: 4 }}>
+                <Tag>{String(a.kind ?? "")}</Tag>
+                {String(a.description ?? "")}
+                {a.uri != null && (
+                  <a href={`/api/artifacts/file?path=${encodeURIComponent(String(a.uri))}`} style={{ marginLeft: 8, color: "#1E40AF" }}>{t("reports.download")}</a>
+                )}
+              </li>
+            ))}
+          </ul>
+        </Card>
       )}
     </div>
   );

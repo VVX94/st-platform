@@ -61,6 +61,34 @@ Every sprint must leave:
 
 Generated datasets, run outputs, plots, CSV/JSON reports, SQLite files, caches, and checkpoints must not be committed.
 
+## Python Environment
+
+This project uses **uv** as the primary Python environment and package manager.
+
+Rules:
+
+1. Use `uv` to create and manage virtual environments (`uv venv`, `uv pip install`).
+2. Pin Python version with a `.python-version` file when creating a new environment.
+3. Do not use `conda`, `pipenv`, `poetry`, or raw `venv` + `pip` unless uv is unavailable on the target machine.
+4. If uv is unavailable, fall back to standard `python -m venv` + `pip install -e .[dev]`.
+5. Never mix package managers in the same environment.
+
+Typical workflow:
+
+```bash
+# Install uv (if not present)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Create environment
+uv venv .venv --python 3.11
+
+# Install project + dev dependencies
+uv pip install -e ".[dev]" --cache-dir /tmp/uv-cache
+
+# Run tests
+PYTHONPATH=src .venv/bin/python -m pytest
+```
+
 ## Useful Commands
 
 Current Python package smoke checks:

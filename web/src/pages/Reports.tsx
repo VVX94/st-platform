@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
+import { Card, Table, Descriptions, Image, Button, Space, Empty, Row, Col } from "antd";
+import { ArrowLeftOutlined, DownloadOutlined } from "@ant-design/icons";
+import { useTranslation } from "react-i18next";
+import ReactECharts from "echarts-for-react";
 import { api, type ExperimentReport } from "../api/client";
+import StatusTag from "../components/StatusTag";
 
 interface Experiment {
   experiment_id: string;
@@ -9,352 +14,195 @@ interface Experiment {
   run_count: number;
 }
 
-function statusBadge(status: string): React.CSSProperties {
-  const colors: Record<string, string> = {
-    queued: "#6c757d",
-    running: "#0d6efd",
-    succeeded: "#198754",
-    failed: "#dc3545",
-    created: "#6c757d",
-  };
-  return {
-    display: "inline-block",
-    padding: "0.15rem 0.5rem",
-    borderRadius: "4px",
-    fontSize: "0.8rem",
-    fontWeight: 600,
-    color: "#fff",
-    backgroundColor: colors[status] || "#6c757d",
-  };
-}
-
 export default function Reports() {
+  const { t } = useTranslation();
   const { experimentId } = useParams<{ experimentId: string }>();
   const [experiments, setExperiments] = useState<Experiment[]>([]);
   const [report, setReport] = useState<ExperimentReport | null>(null);
-  const [error, setError] = useState<string>("");
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if (experimentId) {
-      api
-        .getExperimentReport(experimentId)
-        .then(setReport)
-        .catch((e) => setError(String(e)));
+      api.getExperimentReport(experimentId).then(setReport).catch((e) => setError(String(e)));
     } else {
-      api
-        .get<Experiment[]>("/api/experiments")
-        .then(setExperiments)
-        .catch((e) => setError(String(e)));
+      api.get<Experiment[]>("/api/experiments").then(setExperiments).catch((e) => setError(String(e)));
     }
   }, [experimentId]);
 
-  const th: React.CSSProperties = {
-    textAlign: "left",
-    padding: "0.5rem 1rem",
-    borderBottom: "2px solid #ddd",
-  };
-  const td: React.CSSProperties = {
-    padding: "0.5rem 1rem",
-    borderBottom: "1px solid #eee",
-  };
-
-  // If viewing a specific experiment report
+  // Experiment detail view
   if (experimentId && report) {
-    const domainGridArtifact = report.artifacts.find(
-      (a) => a.kind === "domain_grid_plot"
-    );
-    const metricsBarArtifact = report.artifacts.find(
-      (a) => a.kind === "metrics_bar_plot"
-    );
-    const metricsCsvArtifact = report.artifacts.find(
-      (a) => a.kind === "metrics_csv"
-    );
-    const domainCsvArtifact = report.artifacts.find(
-      (a) => a.kind === "domain_predictions_csv"
-    );
+    const algos = report.runs.map((r) => r.algorithm_id);
+    const metricNames = Object.keys(report.comparison_summary);
+    const barSeries = metricNames.map((metric) => ({
+      name: t(`metrics.${metric}`, metric),
+      type: "bar" as const,
+      data: algos.map((algo) => report.comparison_summary[metric]?.[algo] ?? 0),
+    }));
+
+    const barOption = {
+      tooltip: { trigger: "axis" as const },
+      legend: { top: 0 },
+      grid: { top: 40, bottom: 30 },
+      xAxis: { type: "category" as const, data: algos },
+      yAxis: { type: "value" as const },
+      series: barSeries,
+    };
+
+    // Radar chart (max 8 metrics)
+    const radarMetrics = metricNames.slice(0, 8);
+    const radarOption = {
+      tooltip: {},
+      legend: { top: 0, data: algos },
+      radar: {
+        indicator: radarMetrics.map((m) => ({
+          name: t(`metrics.${m}`, m),
+          max: 1,
+        })),
+      },
+      series: [{
+        type: "radar" as const,
+        data: algos.map((algo) => ({
+          name: algo,
+          value: radarMetrics.map((m) => report.comparison_summary[m]?.[algo] ?? 0),
+        })),
+      }],
+    };
+
+    const domainGridArtifact = report.artifacts.find((a) => a.kind === "domain_grid_plot");
+    const metricsBarArtifact = report.artifacts.find((a) => a.kind === "metrics_bar_plot");
+    const metricsCsvArtifact = report.artifacts.find((a) => a.kind === "metrics_csv");
+    const domainCsvArtifact = report.artifacts.find((a) => a.kind === "domain_predictions_csv");
+
+    const runColumns = [
+      { title: "Run ID", dataIndex: "run_id", key: "id", render: (v: string) => v.slice(0, 12) + "..." },
+      { title: t("dashboard.algorithm"), dataIndex: "algorithm_id", key: "algo" },
+      { title: t("common.status"), dataIndex: "status", key: "status", render: (s: string) => <StatusTag status={s} /> },
+      {
+        title: t("reports.metric"), key: "metrics",
+        render: (_: unknown, r: { metrics: Record<string, number> }) =>
+          Object.entries(r.metrics).map(([k, v]) => `${t(`metrics.${k}`, k)}=${v.toFixed(3)}`).join(", ") || "-",
+      },
+      { title: t("common.details"), key: "details", render: (_: unknown, r: { run_id: string }) => <Link to={`/runs/${r.run_id}`}>{t("common.view")}</Link> },
+    ];
+
+    const summaryColumns = [
+      { title: t("reports.metric"), dataIndex: "name", key: "name", render: (v: string) => t(`metrics.${v}`, v) },
+      { title: "Avg", dataIndex: "avg", key: "avg", render: (v: number) => v.toFixed(4) },
+      { title: "Min", dataIndex: "min", key: "min", render: (v: number) => v.toFixed(4) },
+      { title: "Max", dataIndex: "max", key: "max", render: (v: number) => v.toFixed(4) },
+      { title: "Count", dataIndex: "count", key: "count" },
+    ];
+
+    const summaryData = Object.entries(report.metrics_summary).map(([name, stats]) => ({ name, ...stats }));
 
     return (
       <div>
-        <Link to="/reports" style={{ color: "#0d6efd", textDecoration: "none" }}>
-          &larr; Back to Reports
+        <Link to="/reports">
+          <Button icon={<ArrowLeftOutlined />} type="link" style={{ padding: 0, marginBottom: 16 }}>
+            {t("common.back")}
+          </Button>
         </Link>
-        <h1 style={{ marginTop: "0.5rem" }}>{report.name}</h1>
+        <h2 style={{ fontFamily: "Poppins, sans-serif", fontWeight: 600, marginBottom: 24 }}>{report.name}</h2>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr 1fr",
-            gap: "1rem",
-            marginTop: "1rem",
-          }}
-        >
-          <div>
-            <div style={{ fontWeight: 600, color: "#555" }}>Experiment ID</div>
-            <div>{report.experiment_id}</div>
-          </div>
-          <div>
-            <div style={{ fontWeight: 600, color: "#555" }}>Status</div>
-            <span style={statusBadge(report.status)}>{report.status}</span>
-          </div>
-          <div>
-            <div style={{ fontWeight: 600, color: "#555" }}>Task Type</div>
-            <div>{report.task_type}</div>
-          </div>
-        </div>
+        <Descriptions size="small" bordered column={3} style={{ marginBottom: 24 }}>
+          <Descriptions.Item label={t("common.id")}>{report.experiment_id}</Descriptions.Item>
+          <Descriptions.Item label={t("common.status")}><StatusTag status={report.status} /></Descriptions.Item>
+          <Descriptions.Item label={t("algorithms.taskType")}>{report.task_type}</Descriptions.Item>
+        </Descriptions>
 
-        {/* Metrics Summary */}
-        {Object.keys(report.metrics_summary).length > 0 && (
-          <div style={{ marginTop: "2rem" }}>
-            <h2>Metrics Summary</h2>
-            <table
-              style={{
-                width: "100%",
-                borderCollapse: "collapse",
-                marginTop: "0.5rem",
-              }}
-            >
-              <thead>
-                <tr>
-                  <th style={th}>Metric</th>
-                  <th style={th}>Average</th>
-                  <th style={th}>Min</th>
-                  <th style={th}>Max</th>
-                  <th style={th}>Count</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(report.metrics_summary).map(([name, stats]) => (
-                  <tr key={name}>
-                    <td style={td}>{name}</td>
-                    <td style={td}>{stats.avg.toFixed(4)}</td>
-                    <td style={td}>{stats.min.toFixed(4)}</td>
-                    <td style={td}>{stats.max.toFixed(4)}</td>
-                    <td style={td}>{stats.count}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        {metricNames.length > 0 && (
+          <Row gutter={16} style={{ marginBottom: 24 }}>
+            <Col span={16}>
+              <Card size="small" title={t("reports.metricsComparison")}>
+                <ReactECharts option={barOption} style={{ height: 320 }} />
+              </Card>
+            </Col>
+            <Col span={8}>
+              <Card size="small" title={t("reports.radarChart")}>
+                <ReactECharts option={radarOption} style={{ height: 320 }} />
+              </Card>
+            </Col>
+          </Row>
         )}
 
-        {/* Runs Table */}
+        {summaryData.length > 0 && (
+          <Card size="small" title={t("reports.metricsComparison")} style={{ marginBottom: 24 }}>
+            <Table dataSource={summaryData} columns={summaryColumns} rowKey="name" pagination={false} size="small" />
+          </Card>
+        )}
+
         {report.runs.length > 0 && (
-          <div style={{ marginTop: "2rem" }}>
-            <h2>Runs</h2>
-            <table
-              style={{
-                width: "100%",
-                borderCollapse: "collapse",
-                marginTop: "0.5rem",
-              }}
-            >
-              <thead>
-                <tr>
-                  <th style={th}>Run ID</th>
-                  <th style={th}>Algorithm</th>
-                  <th style={th}>Status</th>
-                  <th style={th}>Metrics</th>
-                  <th style={th}>Details</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.runs.map((r) => (
-                  <tr key={r.run_id}>
-                    <td style={td}>{r.run_id.slice(0, 12)}...</td>
-                    <td style={td}>{r.algorithm_id}</td>
-                    <td style={td}>
-                      <span style={statusBadge(r.status)}>{r.status}</span>
-                    </td>
-                    <td style={td}>
-                      {Object.entries(r.metrics)
-                        .map(([k, v]) => `${k}=${v.toFixed(3)}`)
-                        .join(", ") || "-"}
-                    </td>
-                    <td style={td}>
-                      <Link to={`/runs/${r.run_id}`} style={{ color: "#0d6efd" }}>
-                        View Detail
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <Card size="small" title={t("reports.runDetails")} style={{ marginBottom: 24 }}>
+            <Table dataSource={report.runs} columns={runColumns} rowKey="run_id" pagination={false} size="small" />
+          </Card>
         )}
 
-        {/* Plots */}
-        <div style={{ marginTop: "2rem" }}>
-          <h2>Visualizations</h2>
-          <div
-            style={{
-              display: "flex",
-              gap: "2rem",
-              flexWrap: "wrap",
-              marginTop: "1rem",
-            }}
-          >
-            {domainGridArtifact && (
-              <div>
-                <h3>Domain Grid Plot</h3>
-                <img
-                  src={`/artifacts/file?path=${encodeURIComponent(domainGridArtifact.uri)}`}
-                  alt="Domain Grid Plot"
-                  style={{
-                    maxWidth: "450px",
-                    border: "1px solid #ddd",
-                    borderRadius: "4px",
-                  }}
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = "none";
-                  }}
-                />
-              </div>
-            )}
-            {metricsBarArtifact && (
-              <div>
-                <h3>Metrics Bar Chart</h3>
-                <img
-                  src={`/artifacts/file?path=${encodeURIComponent(metricsBarArtifact.uri)}`}
-                  alt="Metrics Bar Chart"
-                  style={{
-                    maxWidth: "450px",
-                    border: "1px solid #ddd",
-                    borderRadius: "4px",
-                  }}
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = "none";
-                  }}
-                />
-              </div>
-            )}
-            {!domainGridArtifact && !metricsBarArtifact && (
-              <p style={{ color: "#888" }}>
-                No plot artifacts found. Run an experiment first.
-              </p>
-            )}
-          </div>
-        </div>
+        {(domainGridArtifact || metricsBarArtifact) && (
+          <Card size="small" title={t("reports.artifacts")} style={{ marginBottom: 24 }}>
+            <Space size="large" wrap>
+              {domainGridArtifact && (
+                <div>
+                  <div style={{ marginBottom: 8, fontWeight: 500 }}>Domain Grid Plot</div>
+                  <Image
+                    src={`/api/artifacts/file?path=${encodeURIComponent(domainGridArtifact.uri)}`}
+                    width={400}
+                    fallback="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg=="
+                  />
+                </div>
+              )}
+              {metricsBarArtifact && (
+                <div>
+                  <div style={{ marginBottom: 8, fontWeight: 500 }}>Metrics Bar Chart</div>
+                  <Image
+                    src={`/api/artifacts/file?path=${encodeURIComponent(metricsBarArtifact.uri)}`}
+                    width={400}
+                    fallback="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg=="
+                  />
+                </div>
+              )}
+            </Space>
+          </Card>
+        )}
 
-        {/* Download Links */}
         {(metricsCsvArtifact || domainCsvArtifact) && (
-          <div style={{ marginTop: "2rem" }}>
-            <h2>Downloads</h2>
-            <ul style={{ listStyle: "none", padding: 0 }}>
+          <Card size="small" title={t("reports.download")} style={{ marginBottom: 24 }}>
+            <Space>
               {metricsCsvArtifact && (
-                <li style={{ marginBottom: "0.5rem" }}>
-                  <a
-                    href={`/artifacts/file?path=${encodeURIComponent(metricsCsvArtifact.uri)}`}
-                    style={{ color: "#0d6efd" }}
-                  >
-                    Download Metrics CSV
-                  </a>
-                </li>
+                <Button icon={<DownloadOutlined />} href={`/api/artifacts/file?path=${encodeURIComponent(metricsCsvArtifact.uri)}`}>
+                  Metrics CSV
+                </Button>
               )}
               {domainCsvArtifact && (
-                <li style={{ marginBottom: "0.5rem" }}>
-                  <a
-                    href={`/artifacts/file?path=${encodeURIComponent(domainCsvArtifact.uri)}`}
-                    style={{ color: "#0d6efd" }}
-                  >
-                    Download Domain Predictions CSV
-                  </a>
-                </li>
+                <Button icon={<DownloadOutlined />} href={`/api/artifacts/file?path=${encodeURIComponent(domainCsvArtifact.uri)}`}>
+                  Domain Predictions CSV
+                </Button>
               )}
-            </ul>
-          </div>
-        )}
-
-        {/* All artifacts list */}
-        {report.artifacts.length > 0 && (
-          <div style={{ marginTop: "2rem" }}>
-            <h2>All Artifacts</h2>
-            <table
-              style={{
-                width: "100%",
-                borderCollapse: "collapse",
-                marginTop: "0.5rem",
-              }}
-            >
-              <thead>
-                <tr>
-                  <th style={th}>Kind</th>
-                  <th style={th}>Run</th>
-                  <th style={th}>URI</th>
-                  <th style={th}>Description</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.artifacts.map((a) => (
-                  <tr key={a.artifact_id}>
-                    <td style={td}>{a.kind}</td>
-                    <td style={td}>{a.run_id.slice(0, 8)}...</td>
-                    <td
-                      style={{
-                        ...td,
-                        maxWidth: "300px",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {a.uri}
-                    </td>
-                    <td style={td}>{a.description}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+            </Space>
+          </Card>
         )}
       </div>
     );
   }
 
-  // Default: list experiments with report links
+  // Experiment list view
+  const expColumns = [
+    { title: t("common.id"), dataIndex: "experiment_id", key: "id", render: (v: string) => v.slice(0, 8) + "..." },
+    { title: t("common.name"), dataIndex: "name", key: "name" },
+    { title: t("common.status"), dataIndex: "status", key: "status", render: (s: string) => <StatusTag status={s} /> },
+    { title: t("dashboard.runs"), dataIndex: "run_count", key: "runs" },
+    { title: t("dashboard.report"), key: "report", render: (_: unknown, e: Experiment) => <Link to={`/reports/${e.experiment_id}`}>{t("common.view")}</Link> },
+  ];
+
   return (
     <div>
-      <h1>Reports</h1>
-      {error && <div style={{ color: "red", marginBottom: "1rem" }}>{error}</div>}
+      <h2 style={{ fontFamily: "Poppins, sans-serif", fontWeight: 600, marginBottom: 24 }}>{t("reports.title")}</h2>
+      {error && <div style={{ color: "#DC2626", marginBottom: 16 }}>{error}</div>}
       {experiments.length === 0 && !error ? (
-        <p>No experiments created yet. Create an experiment first to generate reports.</p>
+        <Empty description={t("reports.noReports")} />
       ) : (
-        <table
-          style={{
-            width: "100%",
-            borderCollapse: "collapse",
-            marginTop: "1rem",
-          }}
-        >
-          <thead>
-            <tr>
-              <th style={th}>ID</th>
-              <th style={th}>Name</th>
-              <th style={th}>Status</th>
-              <th style={th}>Runs</th>
-              <th style={th}>Report</th>
-            </tr>
-          </thead>
-          <tbody>
-            {experiments.map((e) => (
-              <tr key={e.experiment_id}>
-                <td style={td}>{e.experiment_id.slice(0, 8)}...</td>
-                <td style={td}>{e.name}</td>
-                <td style={td}>
-                  <span style={statusBadge(e.status)}>{e.status}</span>
-                </td>
-                <td style={td}>{e.run_count}</td>
-                <td style={td}>
-                  <Link
-                    to={`/reports/${e.experiment_id}`}
-                    style={{ color: "#0d6efd" }}
-                  >
-                    View Report
-                  </Link>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <Card size="small">
+          <Table dataSource={experiments} columns={expColumns} rowKey="experiment_id" size="small" />
+        </Card>
       )}
     </div>
   );

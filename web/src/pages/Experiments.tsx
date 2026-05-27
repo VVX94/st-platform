@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { Card, Table, Button, Form, Input, Select, Checkbox, Space, Progress, Badge, message } from "antd";
+import { PlusOutlined, PlayCircleOutlined, SyncOutlined } from "@ant-design/icons";
+import { useTranslation } from "react-i18next";
+import ReactECharts from "echarts-for-react";
 import { api, type Run, type WorkerPollResponse } from "../api/client";
+import StatusTag from "../components/StatusTag";
 
 interface Experiment {
   experiment_id: string;
@@ -25,464 +30,206 @@ interface Dataset {
   platform: string;
 }
 
-interface ExperimentReport {
-  comparison_summary: Record<string, Record<string, number>>;
-}
-
-function statusBadge(status: string): React.CSSProperties {
-  const colors: Record<string, string> = {
-    queued: "#6c757d",
-    running: "#0d6efd",
-    succeeded: "#198754",
-    failed: "#dc3545",
-    created: "#6c757d",
-  };
-  return {
-    display: "inline-block",
-    padding: "0.15rem 0.5rem",
-    borderRadius: "4px",
-    fontSize: "0.8rem",
-    fontWeight: 600,
-    color: "#fff",
-    backgroundColor: colors[status] || "#6c757d",
-  };
-}
-
 export default function Experiments() {
+  const { t } = useTranslation();
   const [experiments, setExperiments] = useState<Experiment[]>([]);
-  const [error, setError] = useState<string>("");
+  const [error, setError] = useState("");
   const [selectedExp, setSelectedExp] = useState<string | null>(null);
   const [runs, setRuns] = useState<Run[]>([]);
-  const [pollResult, setPollResult] = useState<string>("");
+  const [pollResult, setPollResult] = useState("");
   const [comparison, setComparison] = useState<Record<string, Record<string, number>>>({});
-
-  // Experiment creation form state
   const [showForm, setShowForm] = useState(false);
-  const [formName, setFormName] = useState("");
-  const [formTaskType, setFormTaskType] = useState("domain_detection");
-  const [formDatasetId, setFormDatasetId] = useState("");
+  const [form] = Form.useForm();
   const [selectedAlgos, setSelectedAlgos] = useState<string[]>([]);
   const [algorithms, setAlgorithms] = useState<Algorithm[]>([]);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
-
-  // Auto-refresh state
   const [autoRefresh, setAutoRefresh] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const loadExperiments = useCallback(() => {
-    api
-      .get<Experiment[]>("/api/experiments")
-      .then(setExperiments)
-      .catch((e) => setError(String(e)));
+    api.get<Experiment[]>("/api/experiments").then(setExperiments).catch((e) => setError(String(e)));
   }, []);
 
-  const loadRuns = useCallback(
-    (expId: string) => {
-      setSelectedExp(expId);
-      setComparison({});
-      api
-        .getExperimentRuns(expId)
-        .then((loadedRuns) => {
-          setRuns(loadedRuns);
-          // Check if any runs are pending
-          const hasPending = loadedRuns.some(
-            (r) => r.status === "queued" || r.status === "running"
-          );
-          setAutoRefresh(hasPending);
-          // If all runs succeeded and there are multiple, load comparison
-          const succeeded = loadedRuns.filter((r) => r.status === "succeeded");
-          const uniqueAlgos = new Set(succeeded.map((r) => r.algorithm_id));
-          if (uniqueAlgos.size > 1) {
-            api
-              .getExperimentReport(expId)
-              .then((report) => setComparison(report.comparison_summary || {}))
-              .catch(() => {});
-          }
-        })
-        .catch((e) => setError(String(e)));
-    },
-    []
-  );
-
-  // Load algorithms and datasets for the creation form
-  useEffect(() => {
-    api
-      .get<Algorithm[]>("/api/algorithms")
-      .then(setAlgorithms)
-      .catch(() => {});
-    api
-      .get<Dataset[]>("/api/datasets")
-      .then(setDatasets)
-      .catch(() => {});
+  const loadRuns = useCallback((expId: string) => {
+    setSelectedExp(expId);
+    setComparison({});
+    api.getExperimentRuns(expId).then((loadedRuns) => {
+      setRuns(loadedRuns);
+      const hasPending = loadedRuns.some((r) => r.status === "queued" || r.status === "running");
+      setAutoRefresh(hasPending);
+      const succeeded = loadedRuns.filter((r) => r.status === "succeeded");
+      const uniqueAlgos = new Set(succeeded.map((r) => r.algorithm_id));
+      if (uniqueAlgos.size > 1) {
+        api.getExperimentReport(expId).then((report) => setComparison(report.comparison_summary || {})).catch(() => {});
+      }
+    }).catch((e) => setError(String(e)));
   }, []);
 
   useEffect(() => {
-    loadExperiments();
-  }, [loadExperiments]);
+    api.get<Algorithm[]>("/api/algorithms").then(setAlgorithms).catch(() => {});
+    api.get<Dataset[]>("/api/datasets").then(setDatasets).catch(() => {});
+  }, []);
 
-  // Auto-refresh effect: poll every 3 seconds while autoRefresh is true
+  useEffect(() => { loadExperiments(); }, [loadExperiments]);
+
   useEffect(() => {
     if (autoRefresh && selectedExp) {
       intervalRef.current = setInterval(() => {
-        api
-          .getExperimentRuns(selectedExp)
-          .then((loadedRuns) => {
-            setRuns(loadedRuns);
-            const hasPending = loadedRuns.some(
-              (r) => r.status === "queued" || r.status === "running"
-            );
-            if (!hasPending) {
-              setAutoRefresh(false);
-              // Load comparison when all done
-              const succeeded = loadedRuns.filter((r) => r.status === "succeeded");
-              const uniqueAlgos = new Set(succeeded.map((r) => r.algorithm_id));
-              if (uniqueAlgos.size > 1) {
-                api
-                  .getExperimentReport(selectedExp)
-                  .then((report) =>
-                    setComparison(report.comparison_summary || {})
-                  )
-                  .catch(() => {});
-              }
+        api.getExperimentRuns(selectedExp).then((loadedRuns) => {
+          setRuns(loadedRuns);
+          const hasPending = loadedRuns.some((r) => r.status === "queued" || r.status === "running");
+          if (!hasPending) {
+            setAutoRefresh(false);
+            const succeeded = loadedRuns.filter((r) => r.status === "succeeded");
+            const uniqueAlgos = new Set(succeeded.map((r) => r.algorithm_id));
+            if (uniqueAlgos.size > 1) {
+              api.getExperimentReport(selectedExp).then((report) => setComparison(report.comparison_summary || {})).catch(() => {});
             }
-            loadExperiments();
-          })
-          .catch(() => {});
+          }
+          loadExperiments();
+        }).catch(() => {});
       }, 3000);
     }
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    };
+    return () => { if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; } };
   }, [autoRefresh, selectedExp, loadExperiments]);
 
   const handlePoll = () => {
-    api
-      .triggerWorkerPoll()
-      .then((r: WorkerPollResponse) => {
-        setPollResult(`Processed ${r.processed} run(s)`);
-        loadExperiments();
-        if (selectedExp) loadRuns(selectedExp);
-      })
-      .catch((e) => setPollResult(`Error: ${String(e)}`));
+    api.triggerWorkerPoll().then((r: WorkerPollResponse) => {
+      setPollResult(`Processed ${r.processed} run(s)`);
+      loadExperiments();
+      if (selectedExp) loadRuns(selectedExp);
+    }).catch((e) => setPollResult(`Error: ${String(e)}`));
   };
 
-  const handleCreateExperiment = () => {
-    if (!formName || selectedAlgos.length === 0) {
-      setError("Name and at least one algorithm are required.");
-      return;
-    }
-    setError("");
-    api
-      .post<{ experiment_id: string }>("/api/experiments", {
-        name: formName,
-        task_type: formTaskType,
+  const handleCreateExperiment = async () => {
+    try {
+      const values = await form.validateFields();
+      if (selectedAlgos.length === 0) { message.error(t("experiments.selectAlgorithmsHint")); return; }
+      setCreating(true);
+      const exp = await api.post<{ experiment_id: string }>("/api/experiments", {
+        name: values.name,
+        task_type: values.taskType || "domain_detection",
         algorithm_ids: selectedAlgos,
-        dataset_id: formDatasetId || undefined,
+        dataset_id: values.datasetId || undefined,
         parameters: {},
-      })
-      .then((exp) => {
-        setShowForm(false);
-        setFormName("");
-        setSelectedAlgos([]);
-        loadExperiments();
-        loadRuns(exp.experiment_id);
-      })
-      .catch((e) => setError(String(e)));
+      });
+      message.success(t("common.success"));
+      setShowForm(false);
+      form.resetFields();
+      setSelectedAlgos([]);
+      loadExperiments();
+      loadRuns(exp.experiment_id);
+    } catch (e) {
+      if (e && typeof e === "object" && "errorFields" in e) return;
+      setError(String(e));
+    } finally {
+      setCreating(false);
+    }
   };
 
-  const handleRegisterDemos = () => {
-    api
-      .registerAllDemoDatasets()
-      .then(() => {
-        // Reload datasets
-        api.get<Dataset[]>("/api/datasets").then(setDatasets).catch(() => {});
-      })
-      .catch((e) => setError(String(e)));
-  };
+  const completedRuns = runs.filter((r) => r.status === "succeeded").length;
+  const totalRuns = runs.length;
+  const progressPercent = totalRuns > 0 ? Math.round((completedRuns / totalRuns) * 100) : 0;
 
-  const toggleAlgo = (algoId: string) => {
-    setSelectedAlgos((prev) =>
-      prev.includes(algoId) ? prev.filter((a) => a !== algoId) : [...prev, algoId]
-    );
-  };
+  // Comparison chart
+  const comparisonMetricNames = Array.from(new Set(Object.values(comparison).flatMap((m) => Object.keys(m)))).sort();
+  const comparisonAlgos = Object.keys(comparison);
+  const comparisonBarOption = comparisonMetricNames.length > 0 ? {
+    tooltip: { trigger: "axis" as const },
+    legend: { top: 0 },
+    grid: { top: 40, bottom: 30 },
+    xAxis: { type: "category" as const, data: comparisonAlgos },
+    yAxis: { type: "value" as const },
+    series: comparisonMetricNames.map((metric) => ({
+      name: t(`metrics.${metric}`, metric),
+      type: "bar" as const,
+      data: comparisonAlgos.map((algo) => comparison[algo]?.[metric] ?? 0),
+    })),
+  } : null;
 
-  // Compute comparison metric names
-  const comparisonMetricNames = Array.from(
-    new Set(Object.values(comparison).flatMap((m) => Object.keys(m)))
-  ).sort();
+  const expColumns = [
+    { title: t("common.id"), dataIndex: "experiment_id", key: "id", render: (v: string) => v.slice(0, 8) + "..." },
+    { title: t("common.name"), dataIndex: "name", key: "name" },
+    { title: t("algorithms.taskType"), dataIndex: "task_type", key: "task_type" },
+    { title: t("common.status"), dataIndex: "status", key: "status", render: (s: string) => <StatusTag status={s} /> },
+    { title: t("dashboard.runs"), dataIndex: "run_count", key: "runs" },
+    {
+      title: t("common.actions"), key: "actions",
+      render: (_: unknown, e: Experiment) => (
+        <Space>
+          <Button size="small" type="primary" onClick={() => loadRuns(e.experiment_id)}>{t("common.view")}</Button>
+          <Link to={`/reports/${e.experiment_id}`}><Button size="small">{t("dashboard.report")}</Button></Link>
+        </Space>
+      ),
+    },
+  ];
 
-  const th: React.CSSProperties = {
-    textAlign: "left",
-    padding: "0.5rem 1rem",
-    borderBottom: "2px solid #ddd",
-  };
-  const td: React.CSSProperties = {
-    padding: "0.5rem 1rem",
-    borderBottom: "1px solid #eee",
-  };
-  const btnStyle = (
-    bg: string
-  ): React.CSSProperties => ({
-    padding: "0.5rem 1rem",
-    backgroundColor: bg,
-    color: "#fff",
-    border: "none",
-    borderRadius: "4px",
-    cursor: "pointer",
-    fontWeight: 600,
-  });
+  const runColumns = [
+    { title: t("dashboard.runId"), dataIndex: "run_id", key: "id", render: (v: string) => v.slice(0, 12) + "..." },
+    { title: t("dashboard.algorithm"), dataIndex: "algorithm_id", key: "algo" },
+    { title: t("common.status"), dataIndex: "status", key: "status", render: (s: string) => <StatusTag status={s} /> },
+    { title: t("runDetail.startedAt"), dataIndex: "started_at", key: "started", render: (v: string | null) => v ? new Date(v).toLocaleTimeString() : "-" },
+    { title: t("runDetail.finishedAt"), dataIndex: "finished_at", key: "finished", render: (v: string | null) => v ? new Date(v).toLocaleTimeString() : "-" },
+    { title: t("common.details"), key: "details", render: (_: unknown, r: Run) => <Link to={`/runs/${r.run_id}`}>{t("common.view")}</Link> },
+  ];
 
   return (
     <div>
-      <h1>Experiments</h1>
-      {error && <div style={{ color: "red", marginBottom: "1rem" }}>{error}</div>}
+      <h2 style={{ fontFamily: "Poppins, sans-serif", fontWeight: 600, marginBottom: 24 }}>{t("experiments.title")}</h2>
+      {error && <div style={{ color: "#DC2626", marginBottom: 16 }}>{error}</div>}
 
-      {/* Top actions */}
-      <div style={{ marginBottom: "1rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-        <button onClick={handlePoll} style={btnStyle("#198754")}>
-          Run Worker
-        </button>
-        <button onClick={() => setShowForm(!showForm)} style={btnStyle("#0d6efd")}>
-          {showForm ? "Cancel" : "New Experiment"}
-        </button>
-        {datasets.length === 0 && (
-          <button onClick={handleRegisterDemos} style={btnStyle("#6c757d")}>
-            Register Demo Datasets
-          </button>
-        )}
-        {autoRefresh && (
-          <span style={{ alignSelf: "center", color: "#0d6efd", fontSize: "0.85rem" }}>
-            Auto-refreshing...
-          </span>
-        )}
-        {pollResult && (
-          <span style={{ alignSelf: "center", color: "#555" }}>{pollResult}</span>
-        )}
-      </div>
+      <Space style={{ marginBottom: 16 }}>
+        <Button type="primary" icon={<PlayCircleOutlined />} onClick={handlePoll}>Run Worker</Button>
+        <Button icon={<PlusOutlined />} onClick={() => setShowForm(!showForm)}>{showForm ? t("common.cancel") : t("experiments.create")}</Button>
+        {datasets.length === 0 && <Button onClick={() => api.registerAllDemoDatasets().then(() => api.get<Dataset[]>("/api/datasets").then(setDatasets))}>Register Demo Datasets</Button>}
+        {autoRefresh && <Badge status="processing" text={<span style={{ color: "#1E40AF" }}>Auto-refreshing...</span>} />}
+        {pollResult && <span style={{ color: "#64748B" }}>{pollResult}</span>}
+      </Space>
 
-      {/* Experiment creation form */}
       {showForm && (
-        <div
-          style={{
-            padding: "1rem",
-            border: "1px solid #ddd",
-            borderRadius: "8px",
-            marginBottom: "1rem",
-            backgroundColor: "#f9f9f9",
-          }}
-        >
-          <h3 style={{ marginTop: 0 }}>Create Experiment</h3>
-          <div style={{ display: "grid", gap: "0.75rem", maxWidth: "500px" }}>
-            <label>
-              Name:
-              <input
-                type="text"
-                value={formName}
-                onChange={(e) => setFormName(e.target.value)}
-                style={{ width: "100%", padding: "0.4rem", marginTop: "0.25rem" }}
-              />
-            </label>
-            <label>
-              Task Type:
-              <select
-                value={formTaskType}
-                onChange={(e) => setFormTaskType(e.target.value)}
-                style={{ width: "100%", padding: "0.4rem", marginTop: "0.25rem" }}
-              >
-                <option value="domain_detection">Domain Detection</option>
-                <option value="quality_control">Quality Control</option>
-                <option value="deconvolution">Deconvolution</option>
-              </select>
-            </label>
-            <label>
-              Dataset:
-              <select
-                value={formDatasetId}
-                onChange={(e) => setFormDatasetId(e.target.value)}
-                style={{ width: "100%", padding: "0.4rem", marginTop: "0.25rem" }}
-              >
-                <option value="">-- None --</option>
-                {datasets.map((d) => (
-                  <option key={d.dataset_id} value={d.dataset_id}>
-                    {d.name} ({d.platform})
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div>
-              <div style={{ marginBottom: "0.25rem", fontWeight: 600 }}>Algorithms:</div>
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: "0.5rem",
-                  maxHeight: "120px",
-                  overflowY: "auto",
-                  padding: "0.5rem",
-                  border: "1px solid #ddd",
-                  borderRadius: "4px",
-                  backgroundColor: "#fff",
-                }}
-              >
-                {algorithms.map((a) => (
-                  <label
-                    key={a.algorithm_id}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "0.3rem",
-                      fontSize: "0.85rem",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedAlgos.includes(a.algorithm_id)}
-                      onChange={() => toggleAlgo(a.algorithm_id)}
-                    />
-                    {a.algorithm_id}
-                  </label>
-                ))}
-              </div>
-            </div>
-            <button onClick={handleCreateExperiment} style={btnStyle("#198754")}>
-              Create
-            </button>
-          </div>
-        </div>
+        <Card size="small" style={{ marginBottom: 16 }}>
+          <Form form={form} layout="vertical" style={{ maxWidth: 500 }}>
+            <Form.Item name="name" label={t("experiments.experimentName")} rules={[{ required: true }]}>
+              <Input />
+            </Form.Item>
+            <Form.Item name="taskType" label={t("algorithms.taskType")} initialValue="domain_detection">
+              <Select options={[{ value: "domain_detection", label: "Domain Detection" }, { value: "quality_control", label: "Quality Control" }, { value: "deconvolution", label: "Deconvolution" }]} />
+            </Form.Item>
+            <Form.Item name="datasetId" label={t("experiments.selectDataset")}>
+              <Select allowClear placeholder={t("experiments.selectDatasetHint")} options={datasets.map((d) => ({ value: d.dataset_id, label: `${d.name} (${d.platform})` }))} />
+            </Form.Item>
+            <Form.Item label={t("experiments.selectAlgorithms")}>
+              <Checkbox.Group value={selectedAlgos} onChange={(v) => setSelectedAlgos(v as string[])} style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {algorithms.map((a) => <Checkbox key={a.algorithm_id} value={a.algorithm_id}>{a.algorithm_id}</Checkbox>)}
+              </Checkbox.Group>
+            </Form.Item>
+            <Button type="primary" onClick={handleCreateExperiment} loading={creating}>{t("experiments.create")}</Button>
+          </Form>
+        </Card>
       )}
 
-      {/* Experiments table */}
-      {experiments.length === 0 && !error ? (
-        <p>No experiments created yet.</p>
-      ) : (
-        <table style={{ width: "100%", borderCollapse: "collapse", marginTop: "1rem" }}>
-          <thead>
-            <tr>
-              <th style={th}>ID</th>
-              <th style={th}>Name</th>
-              <th style={th}>Task Type</th>
-              <th style={th}>Status</th>
-              <th style={th}>Runs</th>
-              <th style={th}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {experiments.map((e) => (
-              <tr
-                key={e.experiment_id}
-                style={{
-                  backgroundColor:
-                    selectedExp === e.experiment_id ? "#f0f8ff" : undefined,
-                }}
-              >
-                <td style={td}>{e.experiment_id.slice(0, 8)}...</td>
-                <td style={td}>{e.name}</td>
-                <td style={td}>{e.task_type}</td>
-                <td style={td}>
-                  <span style={statusBadge(e.status)}>{e.status}</span>
-                </td>
-                <td style={td}>{e.run_count}</td>
-                <td style={td}>
-                  <button
-                    onClick={() => loadRuns(e.experiment_id)}
-                    style={{
-                      padding: "0.25rem 0.5rem",
-                      backgroundColor: "#0d6efd",
-                      color: "#fff",
-                      border: "none",
-                      borderRadius: "4px",
-                      cursor: "pointer",
-                      fontSize: "0.85rem",
-                    }}
-                  >
-                    View Runs
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      <Card size="small">
+        <Table dataSource={experiments} columns={expColumns} rowKey="experiment_id" size="small" />
+      </Card>
+      {experiments.length === 0 && !error && <p style={{ marginTop: 16, color: "#64748B" }}>{t("experiments.noExperiments")}</p>}
 
-      {/* Runs table for selected experiment */}
       {selectedExp && runs.length > 0 && (
-        <div style={{ marginTop: "2rem" }}>
-          <h2>Runs for Experiment {selectedExp.slice(0, 8)}...</h2>
-          <table
-            style={{ width: "100%", borderCollapse: "collapse", marginTop: "0.5rem" }}
-          >
-            <thead>
-              <tr>
-                <th style={th}>Run ID</th>
-                <th style={th}>Algorithm</th>
-                <th style={th}>Status</th>
-                <th style={th}>Started</th>
-                <th style={th}>Finished</th>
-                <th style={th}>Details</th>
-              </tr>
-            </thead>
-            <tbody>
-              {runs.map((r) => (
-                <tr key={r.run_id}>
-                  <td style={td}>{r.run_id.slice(0, 12)}...</td>
-                  <td style={td}>{r.algorithm_id}</td>
-                  <td style={td}>
-                    <span style={statusBadge(r.status)}>{r.status}</span>
-                  </td>
-                  <td style={td}>
-                    {r.started_at
-                      ? new Date(r.started_at).toLocaleTimeString()
-                      : "-"}
-                  </td>
-                  <td style={td}>
-                    {r.finished_at
-                      ? new Date(r.finished_at).toLocaleTimeString()
-                      : "-"}
-                  </td>
-                  <td style={td}>
-                    <Link to={`/runs/${r.run_id}`} style={{ color: "#0d6efd" }}>
-                      View Detail
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Card size="small" style={{ marginTop: 24 }} title={<span>Runs for Experiment {selectedExp.slice(0, 8)}...</span>}>
+          {totalRuns > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <span style={{ marginRight: 16, color: "#64748B" }}>{t("experiments.progress")}</span>
+              <Progress percent={progressPercent} format={() => t("experiments.completed", { completed: completedRuns, total: totalRuns })} />
+            </div>
+          )}
+          <Table dataSource={runs} columns={runColumns} rowKey="run_id" pagination={false} size="small" />
+        </Card>
       )}
 
-      {/* Algorithm comparison table */}
-      {Object.keys(comparison).length > 0 && comparisonMetricNames.length > 0 && (
-        <div style={{ marginTop: "2rem" }}>
-          <h2>Algorithm Comparison</h2>
-          <table
-            style={{ width: "100%", borderCollapse: "collapse", marginTop: "0.5rem" }}
-          >
-            <thead>
-              <tr>
-                <th style={th}>Algorithm</th>
-                {comparisonMetricNames.map((name) => (
-                  <th key={name} style={th}>{name}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {Object.entries(comparison).map(([algoId, metrics]) => (
-                <tr key={algoId}>
-                  <td style={td}>{algoId}</td>
-                  {comparisonMetricNames.map((name) => (
-                    <td key={name} style={td}>
-                      {metrics[name] !== undefined ? metrics[name].toFixed(4) : "-"}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {comparisonBarOption && (
+        <Card size="small" style={{ marginTop: 24 }} title={t("experiments.comparisonChart")}>
+          <ReactECharts option={comparisonBarOption} style={{ height: 320 }} />
+        </Card>
       )}
     </div>
   );
