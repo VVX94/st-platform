@@ -48,6 +48,16 @@ export interface Artifact {
   created_at: string | null;
 }
 
+export interface ExperimentReport {
+  experiment_id: string;
+  name: string;
+  status: string;
+  task_type: string;
+  runs: Run[];
+  metrics_summary: Record<string, { avg: number; min: number; max: number; count: number }>;
+  artifacts: Artifact[];
+}
+
 export interface WorkerPollResponse {
   processed: number;
 }
@@ -69,4 +79,6 @@ export const api = {
     request<WorkerPollResponse>("/api/worker/poll", { method: "POST" }),
   registerDemoDataset: () =>
     request<unknown>("/api/datasets/register-demo", { method: "POST" }),
+  getExperimentReport: (experimentId: string) =>
+    request<ExperimentReport>(`/api/experiments/${experimentId}/report`),
 };

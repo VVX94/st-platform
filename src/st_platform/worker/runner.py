@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
 from st_platform.core.registry import AlgorithmRegistry
 from st_platform.core.runner import LocalRunner
-from st_platform.storage.models import RunModel
+from st_platform.storage.models import ArtifactModel, RunModel
 from st_platform.storage.repositories import RunRepo
 from st_platform.tasks import TaskType
 
@@ -23,6 +24,106 @@ def _run_to_bundle_params(run: RunModel) -> dict:
         return json.loads(run.parameters_json)
     except (json.JSONDecodeError, TypeError):
         return {}
+
+
+def _generate_run_reports(run_id: str, result, db: Session) -> None:
+    """Generate CSV/PNG report artifacts after a successful run.
+
+    Failures here are logged as warnings and do NOT fail the run.
+    """
+    from st_platform.benchmark.reports import (
+        generate_domain_grid_plot,
+        generate_domain_predictions_csv,
+        generate_metrics_bar_plot,
+        generate_run_metrics_csv,
+    )
+
+    run_root = Path(result.run_root) if result.run_root else None
+    if run_root is None:
+        logger.warning("No run_root for run %s; skipping report generation", run_id)
+        return
+
+    metrics = result.metrics or {}
+    artifacts = result.artifacts or []
+
+    # -- Metrics CSV --
+    try:
+        csv_path = str(run_root / f"{run_id}_metrics.csv")
+        generate_run_metrics_csv(
+            {"run_id": run_id, "algorithm_id": result.algorithm_id, "metrics": metrics},
+            csv_path,
+        )
+        art = ArtifactModel(
+            run_id=run_id,
+            kind="metrics_csv",
+            uri=csv_path,
+            description="Run metrics as CSV.",
+        )
+        db.add(art)
+    except Exception:
+        logger.warning("Failed to generate metrics CSV for run %s", run_id, exc_info=True)
+
+    # -- Metrics bar plot --
+    try:
+        bar_path = str(run_root / f"{run_id}_metrics_bar.png")
+        generate_metrics_bar_plot(metrics, bar_path)
+        art = ArtifactModel(
+            run_id=run_id,
+            kind="metrics_bar_plot",
+            uri=bar_path,
+            description="Bar chart of run metrics.",
+        )
+        db.add(art)
+    except Exception:
+        logger.warning("Failed to generate metrics bar plot for run %s", run_id, exc_info=True)
+
+    # -- Domain predictions from domain_assignments artifacts --
+    for orig_art in artifacts:
+        if orig_art.get("kind") != "domain_assignments":
+            continue
+        uri = orig_art.get("uri", "")
+        if not uri or not Path(uri).exists():
+            continue
+
+        try:
+            domain_data = json.loads(Path(uri).read_text(encoding="utf-8"))
+        except Exception:
+            logger.warning("Failed to read domain assignments from %s", uri, exc_info=True)
+            continue
+
+        # Domain CSV
+        try:
+            dom_csv_path = str(run_root / f"{run_id}_domain_predictions.csv")
+            generate_domain_predictions_csv(domain_data, dom_csv_path)
+            art = ArtifactModel(
+                run_id=run_id,
+                kind="domain_predictions_csv",
+                uri=dom_csv_path,
+                description="Domain predictions as CSV.",
+            )
+            db.add(art)
+        except Exception:
+            logger.warning("Failed to generate domain CSV for run %s", run_id, exc_info=True)
+
+        # Domain grid plot
+        try:
+            grid_path = str(run_root / f"{run_id}_domain_grid.png")
+            generate_domain_grid_plot(domain_data, grid_path)
+            art = ArtifactModel(
+                run_id=run_id,
+                kind="domain_grid_plot",
+                uri=grid_path,
+                description="Scatter plot of spatial domain predictions.",
+            )
+            db.add(art)
+        except Exception:
+            logger.warning("Failed to generate domain grid plot for run %s", run_id, exc_info=True)
+
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.warning("Failed to commit report artifacts for run %s", run_id, exc_info=True)
 
 
 def poll_runs(
@@ -130,6 +231,11 @@ def poll_runs(
                 metrics=result.metrics,
                 artifacts=result.artifacts,
             )
+            # Generate report artifacts (non-fatal)
+            try:
+                _generate_run_reports(run.run_id, result, db)
+            except Exception:
+                logger.warning("Report generation failed for run %s", run.run_id, exc_info=True)
         else:
             repo.mark_failed(run.run_id, result.error or "Unknown error")
 

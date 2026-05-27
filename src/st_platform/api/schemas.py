@@ -114,5 +114,15 @@ class ArtifactOut(BaseModel):
 
 # ---------- Worker ----------
 
+class ExperimentReportOut(BaseModel):
+    experiment_id: str
+    name: str
+    status: str
+    task_type: str = ""
+    runs: List[RunOut] = Field(default_factory=list)
+    metrics_summary: Dict[str, Any] = Field(default_factory=dict)
+    artifacts: List[ArtifactOut] = Field(default_factory=list)
+
+
 class WorkerPollResponse(BaseModel):
     processed: int

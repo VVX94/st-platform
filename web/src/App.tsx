@@ -3,6 +3,7 @@ import Algorithms from "./pages/Algorithms";
 import Dashboard from "./pages/Dashboard";
 import Datasets from "./pages/Datasets";
 import Experiments from "./pages/Experiments";
+import Reports from "./pages/Reports";
 import RunDetail from "./pages/RunDetail";
 
 const navStyle: React.CSSProperties = {
@@ -36,6 +37,7 @@ export default function App() {
         <Link to="/datasets" style={linkStyle}>Datasets</Link>
         <Link to="/algorithms" style={linkStyle}>Algorithms</Link>
         <Link to="/experiments" style={linkStyle}>Experiments</Link>
+        <Link to="/reports" style={linkStyle}>Reports</Link>
       </nav>
       <div style={bodyStyle}>
         <Routes>
@@ -43,6 +45,8 @@ export default function App() {
           <Route path="/datasets" element={<Datasets />} />
           <Route path="/algorithms" element={<Algorithms />} />
           <Route path="/experiments" element={<Experiments />} />
+          <Route path="/reports" element={<Reports />} />
+          <Route path="/reports/:experimentId" element={<Reports />} />
           <Route path="/runs/:runId" element={<RunDetail />} />
         </Routes>
       </div>

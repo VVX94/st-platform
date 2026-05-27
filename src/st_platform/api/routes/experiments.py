@@ -7,8 +7,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from st_platform.api.deps import get_db_session
-from st_platform.api.schemas import ExperimentCreate, ExperimentOut, RunOut
-from st_platform.storage.repositories import DatasetRepo, ExperimentRepo, RunRepo
+from st_platform.api.schemas import (
+    ArtifactOut,
+    ExperimentCreate,
+    ExperimentOut,
+    ExperimentReportOut,
+    RunOut,
+)
+from st_platform.storage.repositories import ArtifactRepo, DatasetRepo, ExperimentRepo, MetricRepo, RunRepo
 
 router = APIRouter()
 
@@ -119,3 +125,73 @@ async def get_experiment_runs(
     from st_platform.api.routes.runs import _model_to_out as run_model_to_out
 
     return [run_model_to_out(r) for r in exp_runs]
+
+
+@router.get("/api/experiments/{experiment_id}/report", response_model=ExperimentReportOut)
+async def get_experiment_report(
+    experiment_id: str,
+    db: Session = Depends(get_db_session),
+) -> ExperimentReportOut:
+    """Return a summary report for an experiment: info, runs, metrics, artifacts."""
+    repo = ExperimentRepo(db)
+    exp = repo.get(experiment_id)
+    if exp is None:
+        raise HTTPException(status_code=404, detail=f"Experiment '{experiment_id}' not found")
+
+    # Gather runs
+    run_repo = RunRepo(db)
+    all_runs = run_repo.list_all()
+    exp_runs = [r for r in all_runs if r.experiment_id == experiment_id]
+
+    from st_platform.api.routes.runs import _model_to_out as run_model_to_out
+
+    runs_out = [run_model_to_out(r) for r in exp_runs]
+
+    # Aggregate metrics summary: for each metric name, collect values across runs
+    metrics_summary: dict = {}
+    for run in runs_out:
+        for name, value in run.metrics.items():
+            if name not in metrics_summary:
+                metrics_summary[name] = []
+            metrics_summary[name].append(value)
+
+    # Compute avg/min/max per metric
+    summary_stats: dict = {}
+    for name, values in metrics_summary.items():
+        summary_stats[name] = {
+            "avg": sum(values) / len(values) if values else 0,
+            "min": min(values) if values else 0,
+            "max": max(values) if values else 0,
+            "count": len(values),
+        }
+
+    # Collect all artifacts
+    artifact_repo = ArtifactRepo(db)
+    all_artifacts: list = []
+    for r in exp_runs:
+        for a in artifact_repo.list_for_run(r.run_id):
+            try:
+                meta = json.loads(a.metadata_json)
+            except (json.JSONDecodeError, TypeError):
+                meta = {}
+            all_artifacts.append(
+                ArtifactOut(
+                    artifact_id=a.artifact_id,
+                    run_id=a.run_id,
+                    kind=a.kind,
+                    uri=a.uri,
+                    description=a.description,
+                    metadata=meta,
+                    created_at=a.created_at,
+                )
+            )
+
+    return ExperimentReportOut(
+        experiment_id=exp.experiment_id,
+        name=exp.name,
+        status=exp.status,
+        task_type=exp.task_type,
+        runs=runs_out,
+        metrics_summary=summary_stats,
+        artifacts=all_artifacts,
+    )
