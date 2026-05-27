@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+VENV=".venv-spagcn/bin/python"
+if [ ! -f "$VENV" ]; then
+  echo "ERROR: $VENV not found. Create it with: uv venv .venv-spagcn --python 3.11" >&2
+  exit 1
+fi
 echo "Starting ST Platform worker (polling every 5s) ..."
-PYTHONPATH=src python3 -c "
+PYTHONPATH=src $VENV -c "
 import time
 import logging
 from st_platform.storage.database import SessionLocal, init_db
