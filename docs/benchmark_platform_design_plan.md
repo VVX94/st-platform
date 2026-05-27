@@ -82,10 +82,9 @@
 - FastAPI 后端。
 - React 管理后台。
 - 异步 worker。
-- 开发模式 SQLite 元数据存储。
-- 生产部署目标 Postgres 元数据存储。
-- Redis 队列。
-- 文件系统 artifact volume。
+- SQLite 元数据存储。
+- 阿里云 OSS 数据和 artifact 存储。
+- 本地小容量临时缓存目录。
 - Docker Compose 部署骨架。
 - h5ad 和 10x Visium 数据读取。
 - 空间域/聚类算法评测。
@@ -102,6 +101,8 @@
 - 复杂并发任务调度。
 - 完整容器化算法隔离 runner。
 - 弹性扩缩容。
+- Redis / Celery / RQ 等独立队列服务。
+- Postgres 生产数据库迁移。
 - 完整生产级监控告警。
 - 完整论文级指标集。
 
@@ -117,7 +118,7 @@ st-platform/
 │  ├─ api/                  # FastAPI 路由、schemas、依赖注入
 │  ├─ benchmark/            # experiment、metrics、reports、worker 协调
 │  ├─ io/                   # h5ad / Visium 数据读取与 SpatialDataBundle 转换
-│  ├─ storage/              # SQLite repository、artifact path 管理
+│  ├─ storage/              # SQLite repository、OSS artifact 管理
 │  ├─ algorithms/           # 现有算法适配器 + STAGATE / SpaceFlow
 │  ├─ core/                 # 现有 registry、runner、RunResult
 │  ├─ data/                 # 现有数据契约
@@ -135,12 +136,14 @@ st-platform/
 - `algorithms/` 继续只负责算法适配，不承担 benchmark 编排。
 - `benchmark/` 负责多数据集、多算法、指标和报告。
 - `io/` 负责把真实数据转换成平台统一数据对象。
-- `storage/` 负责 SQLite 和 artifact 索引，不把持久化逻辑散落在 service 中。
+- `storage/` 负责 SQLite 元数据、OSS 对象索引和临时缓存路径，不把持久化逻辑散落在 service 中。
 - React 前端只通过 API 访问平台，不直接读取本地文件。
 
 ### 4.1 部署目标
 
-最终部署目标面向阿里云服务器上的 Web 服务。首个可部署形态采用单机 Docker Compose，后续再根据真实负载演进到更强的单机规格、多机部署或托管数据库/对象存储。
+最终部署目标面向阿里云服务器上的 Web 服务。首个可部署形态采用轻量单机 Docker Compose：服务容器尽量少，镜像尽量小，服务器本地磁盘只保存 SQLite 元数据、小型日志和运行期临时缓存；真实数据、运行产物、报告图表、预测表和模型权重统一存入阿里云 OSS。
+
+后续再根据真实负载演进到更强的单机规格、多机部署、Postgres、Redis 队列或更完整的算法容器隔离。
 
 首个部署拓扑：
 
@@ -150,14 +153,15 @@ Nginx / web
   -> reverse proxy /api to FastAPI
 
 FastAPI api
-  -> Postgres metadata database
-  -> Redis queue
-  -> artifact volume
+  -> SQLite metadata database
+  -> OSS dataset/artifact storage
+  -> local temp cache
 
 worker
-  -> Redis queue
+  -> SQLite queued runs
   -> algorithm runner
-  -> artifact volume
+  -> OSS dataset/artifact storage
+  -> local temp cache cleanup
 ```
 
 建议部署目录：
@@ -177,19 +181,37 @@ deploy/
 | 服务 | 职责 | 初期资源策略 |
 |---|---|---|
 | `web` | 托管 React 静态资源，反向代理 API | 静态服务，保持轻量 |
-| `api` | FastAPI 路由、鉴权、实验配置、状态查询 | 不执行长任务，只入队和查询 |
-| `worker` | 后台执行 benchmark run、写 metrics/artifacts | 默认低并发，优先保证稳定 |
-| `postgres` | 生产元数据存储 | 保存 dataset、experiment、run、metric、artifact 索引 |
-| `redis` | 队列和短期状态 | 只承担任务队列和轻量状态 |
-| `artifact volume` | 保存报告、图、预测表和运行日志 | 大文件不进入 Git，只通过 manifest 审计 |
+| `api` | FastAPI 路由、鉴权、实验配置、状态查询、OSS 上传/下载签名 | 不执行长任务，只创建任务和查询 |
+| `worker` | 后台执行 benchmark run、读写 OSS artifacts | 默认低并发，运行后清理本地临时文件 |
+| `sqlite` | 当前元数据存储 | 小文件持久化，可定期备份到 OSS |
+| `oss` | 数据集、运行产物、报告、图表、预测表、模型权重 | 主存储，不依赖服务器大硬盘 |
 
 资源约束原则：
 
-- 初期按小资源单机环境设计，避免把 API、Web 和算法执行耦合在同一进程。
+- 初期按小资源单机环境设计，避免把 API、Web 和算法执行耦合在同一进程，也避免在首期引入过多常驻容器。
 - 默认 worker 并发为低并发，算法 run 通过队列串行或小并发执行。
 - demo 和 smoke test 使用小型数据集和低训练轮数，完整 benchmark 作为后台任务运行。
-- 大型数据、模型权重、报告图片和 CSV/JSON 产物只落 artifact volume，不进入 Git。
+- 大型数据、模型权重、报告图片和 CSV/JSON 产物只落 OSS，不进入 Git。
+- worker 只在 run 期间把必要数据下载到本地临时目录，任务结束后清理。
+- Docker 镜像不打包原始数据、运行结果、模型 checkpoint 或完整演示产物；重依赖算法后续可拆成独立 runner 镜像。
 - 文档不固化临时测试服务器规格，只记录可扩展部署原则和资源敏感策略。
+
+### 4.2 存储演进路线
+
+当前和首期部署：
+
+- 元数据：SQLite。
+- 数据集对象：阿里云 OSS。
+- artifact：阿里云 OSS。
+- 本地磁盘：只保存 SQLite、小日志和可清理临时缓存。
+- 队列：首期可使用 SQLite queued runs + worker 轮询，减少常驻服务数量。
+
+后续升级：
+
+- 元数据从 SQLite 迁移到 Postgres。
+- 队列从 SQLite 轮询迁移到 Redis + RQ/Celery/Arq。
+- artifact 继续使用 OSS，只替换索引和签名策略，不迁移大文件回服务器。
+- 重型算法拆分为可选 runner 镜像，避免主 API / worker 镜像过大。
 
 ## 5. 后端模块设计
 
@@ -208,8 +230,8 @@ deploy/
 
 | 格式 | 输入 | 说明 |
 |---|---|---|
-| h5ad | `.h5ad` 文件路径 | 需要 `obsm["spatial"]` 或用户指定坐标键 |
-| Visium | 10x Visium 目录路径 | 读取表达矩阵、`spatial/` 坐标和 metadata |
+| h5ad | OSS URI 或开发模式本地 `.h5ad` 文件路径 | 需要 `obsm["spatial"]` 或用户指定坐标键 |
+| Visium | OSS 前缀或开发模式本地 10x Visium 目录路径 | 读取表达矩阵、`spatial/` 坐标和 metadata |
 
 标签策略：
 
@@ -288,7 +310,7 @@ run 状态：
 首版输出：
 
 ```text
-benchmark_results/<experiment_id>/
+oss://<bucket>/benchmark_results/<experiment_id>/
 ├─ experiment_summary.csv
 ├─ run_metrics.csv
 ├─ domain_predictions.csv
@@ -296,6 +318,8 @@ benchmark_results/<experiment_id>/
 ├─ metrics_bar.png
 └─ report.md
 ```
+
+开发模式可以把同样结构写入本地 `benchmark_results/`，但部署环境默认写入 OSS。
 
 ## 6. 算法范围
 
@@ -334,14 +358,15 @@ benchmark_results/<experiment_id>/
 
 数据集登记方式：
 
-- 首版使用本地路径登记。
-- 不复制大文件。
-- 不通过浏览器上传。
-- 平台只保存路径、metadata、解析状态和标签列配置。
+- 首版部署使用 OSS URI / OSS prefix 登记。
+- 开发模式允许使用本地路径登记。
+- 不把大文件复制到服务器长期保存。
+- 浏览器上传后也应尽快进入 OSS，服务器只做流式转发或签名授权。
+- 平台只保存 URI、storage backend、metadata、解析状态和标签列配置。
 
 ## 8. 存储设计
 
-首版使用 SQLite + 文件 artifact。
+首版使用 SQLite + OSS artifact。服务器本地只保留小型 SQLite 文件、运行日志和可清理临时缓存；大文件、报告、图表、预测表和模型权重都写入 OSS。
 
 ### 8.1 SQLite 表草案
 
@@ -352,7 +377,8 @@ benchmark_results/<experiment_id>/
 | `id` | 数据集 ID |
 | `name` | 显示名称 |
 | `format` | `h5ad` 或 `visium` |
-| `path` | 本地路径 |
+| `uri` | OSS URI 或开发模式本地路径 |
+| `storage_backend` | `oss` / `local` |
 | `n_obs` | spot/cell 数 |
 | `n_vars` | gene 数 |
 | `spatial_key` | 坐标键 |
@@ -411,7 +437,8 @@ benchmark_results/<experiment_id>/
 | `id` | artifact ID |
 | `run_id` | 所属 run |
 | `kind` | `domain_assignments` / `plot` / `table` / `report` |
-| `path` | 文件路径 |
+| `uri` | OSS URI 或开发模式本地路径 |
+| `storage_backend` | `oss` / `local` |
 | `description` | 描述 |
 
 ## 9. API 草案
@@ -458,7 +485,7 @@ benchmark_results/<experiment_id>/
 页面能力：
 
 - 列出已登记数据集。
-- 登记本地路径。
+- 登记 OSS URI / OSS prefix，开发模式可登记本地路径。
 - 显示格式、shape、标签列、解析状态。
 - 查看数据集详情。
 
@@ -556,7 +583,7 @@ FastAPI API
 | 算法依赖冲突 | 算法无法同时安装或运行 | 继续使用单 uv 环境，文档标注风险 |
 | `torch_sparse` 等依赖难装 | 影响 conST/STAGATE 类算法 | 首版允许 model-path adapter，后续做环境隔离 |
 | 运行时间长 | Web 请求超时 | 使用后台 worker |
-| 数据文件大 | 上传和复制成本高 | 首版只登记本地路径 |
+| 数据文件大 | 上传、复制和本地磁盘占用成本高 | 首版以 OSS URI 登记为主，服务器只保留临时缓存 |
 | 无标签数据不可算 ARI/NMI | 指标不完整 | 按有标签/无标签分级展示 |
 | React + FastAPI 工程量增加 | 延长首版周期 | UI 聚焦五个 benchmark 核心模块 |
 | 完整论文指标未实现 | benchmark 深度不足 | 明确列为后续 TODO |
@@ -660,9 +687,9 @@ FastAPI API
 ## 16. 当前默认决策
 
 - 交付形态：FastAPI + React。
-- 执行模型：本地单 worker 异步队列。
-- 存储：SQLite + 文件 artifact。
-- 数据输入：登记本地 h5ad / Visium 路径。
+- 执行模型：SQLite queued runs + 低并发 worker，后续可迁移 Redis 队列。
+- 存储：SQLite 元数据 + 阿里云 OSS 数据/artifact，后续可迁移 Postgres 元数据。
+- 数据输入：登记 OSS h5ad / Visium 前缀，开发模式可用本地路径。
 - 任务范围：空间域/聚类 benchmark。
 - 指标范围：首版核心 + 空间指标，完整论文指标后续实现。
 - 算法范围：当前 7 个 + STAGATE + SpaceFlow。
