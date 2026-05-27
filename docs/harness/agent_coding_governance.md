@@ -81,6 +81,75 @@
 - 不能因为功能“看起来差不多”而通过核心流程失败的 sprint。
 - 如果无法验证，必须标记 blocked，而不是 passed。
 
+### 2.4 Context Reset Protocol
+
+上下文 reset 是 harness 的常规操作，不应被视为异常。目标是降低长对话中的遗漏、漂移和上下文焦虑，让后续 agent 可以从文件系统恢复状态，而不是依赖完整聊天历史。
+
+触发条件：
+
+- 一个 sprint 完成并已提交 Git。
+- 上下文过长，agent 开始需要反复回忆旧决策。
+- Generator 或 Evaluator 无法明确回答当前任务、验收标准、已改文件、剩余风险。
+- 用户要求进入下一轮任务。
+- 发生连续失败，需要重新收束任务边界。
+
+reset 前必须完成：
+
+1. 更新当前 `docs/harness/sessions/YYYY-MM-DD-HHMM-<topic>.md`。
+2. 更新关联 `task_spec.md`、`status.md` 或 `sprint_contract.md`。
+3. 如果有实现改动，写 `generator_handoff.md`。
+4. 如果有评审，写 `evaluator_report.md` 和 `acceptance_status.md`。
+5. 记录验证命令、失败原因、未决问题和下一步。
+6. 检查中间产物是否被 `.gitignore` 排除或写入 manifest。
+7. 创建 Git 提交。
+
+reset 后恢复时只读取最小入口：
+
+1. `docs/harness/README.md`。
+2. `docs/harness/agent_coding_governance.md`。
+3. `docs/harness/project_structure_map.md`。
+4. 当前任务的 `task_spec.md` 和 `status.md`。
+5. 当前 sprint 的 `sprint_contract.md`、最近 `generator_handoff.md`、最近 `evaluator_report.md`。
+6. 最近 1-3 个相关 session record。
+7. 必要时再读取 `docs/benchmark_platform_design_plan.md` 的相关章节。
+
+reset 后禁止：
+
+- 依赖“我记得之前说过”作为依据。
+- 重新扫描全仓库替代读取当前任务包。
+- 在未恢复当前 task / sprint 状态前直接编码。
+- 把旧聊天内容中的未落盘信息当作已确认事实。
+
+### 2.5 Skill / Tool Policy
+
+每个 sprint contract 必须声明本轮需要使用的工具和验证方式。Generator 可以补测试工具，Evaluator 必须独立运行验证；如果关键工具不可用，应标记 blocked 或先创建“测试设施补齐”任务。
+
+任务类型和最低工具要求：
+
+| 任务类型 | Generator 必须做 | Evaluator 必须验证 |
+|---|---|---|
+| 后端 API | 添加/更新 API 测试或 smoke 脚本 | 运行 API 测试，检查请求/响应、错误码和持久化状态 |
+| Worker / 队列 | 添加状态流转和失败路径测试 | 验证 queued -> running -> succeeded/failed，检查重试/错误记录边界 |
+| 数据 / OSS | 添加 reader、URI、临时缓存和清理测试 | 验证 OSS URI 读写策略、SQLite 索引、本地临时文件清理 |
+| 算法 adapter | 添加小数据 smoke test | 运行真实小数据或 demo 数据，检查 artifact 和错误信息 |
+| 指标 / 报告 | 添加固定输入的指标测试 | 检查 CSV/Markdown/图表 artifact 真实生成且指标非伪造 |
+| 前端 UI | 遵循当前环境可用的前端设计规范；若存在前端设计 skill，应先使用并记录 | 使用 Playwright 或等价浏览器 E2E 工具点击核心流程、截图检查、验证无明显布局遮挡 |
+| 部署 | 提供 Compose/env/healthcheck smoke 方案 | 验证服务可启动、API 可访问、worker 可运行、OSS/SQLite 配置可用 |
+
+前端设计补充要求：
+
+- 设计阶段必须先确认用户工作流，而不是只堆页面。
+- 如果当前环境提供专门的前端设计 skill，应在 session record 中记录使用情况。
+- 如果没有专门 skill，应按项目内前端设计约束执行，并在 sprint contract 中写明 fallback。
+- 前端验收不能只靠截图，必须覆盖至少一个用户可完成的操作流。
+
+Playwright / 浏览器验证要求：
+
+- 涉及 React 页面、布局、导航、表单、报告展示或下载的 sprint，默认需要 Playwright。
+- 若 Playwright 未安装，Generator 应把安装和最小 E2E 脚本纳入 sprint，或单独创建测试设施任务。
+- Evaluator 必须记录启动命令、浏览器测试命令、截图或失败证据。
+- 如果无法启动浏览器或服务，结论为 blocked，不得标记 passed。
+
 ## 3. 目录和命名
 
 ### 3.1 会话记录

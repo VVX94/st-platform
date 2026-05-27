@@ -73,6 +73,15 @@
 - 每轮任务结束必须提交一次 Git 快照，提交信息应能对应到 task 或 sprint。
 - Git 提交只包含源码、测试、规范文档、配置和 manifest；运行中间文件、数据库、上传数据、模型权重、生成图片、CSV/JSON 报告等产物默认只在 manifest 中登记，不直接进入 Git。
 
+上下文和工具约束：
+
+- 每个 sprint 只处理一个明确工作点。
+- sprint 结束或上下文过长时必须执行 Context Reset Protocol：先写 session、handoff、评审、状态和 Git 提交，再进入下一轮。
+- reset 后的新 agent 只从 `docs/harness/README.md`、`agent_coding_governance.md`、当前 task/sprint 和最近 session 恢复上下文。
+- 涉及前端 UI 的 sprint 默认需要 Playwright 或等价浏览器 E2E 验证；如未安装，先补测试设施或标记 blocked。
+- 前端设计时优先使用当前环境可用的前端设计 skill；没有专门 skill 时，按项目内前端设计约束执行并记录 fallback。
+- 涉及部署、worker、OSS、算法或报告的 sprint，必须在 contract 中写明对应 smoke test 和 artifact 检查方式。
+
 ## 3. 首版范围
 
 ### 3.1 包含内容
