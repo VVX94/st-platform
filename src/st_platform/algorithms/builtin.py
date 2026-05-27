@@ -73,6 +73,18 @@ class MockDomainDetectionAlgorithm(Algorithm):
         context: Mapping[str, Any],
     ) -> AlgorithmOutput:
         resolution = parameters.get("resolution", 0.8)
+
+        # Write a placeholder HTML artifact
+        from pathlib import Path
+
+        html_path = Path(context["run_root"]) / "domain-map.html"
+        html_path.write_text(
+            "<html><body><h1>Mock Domain Map</h1>"
+            "<p>This is a placeholder for the spatial domain visualization.</p>"
+            "</body></html>",
+            encoding="utf-8",
+        )
+
         return AlgorithmOutput(
             summary={
                 "message": "Mock domain detection completed.",
@@ -84,7 +96,7 @@ class MockDomainDetectionAlgorithm(Algorithm):
                 {
                     "kind": "plot",
                     "name": "domain-map.html",
-                    "uri": f"{context['run_root']}/domain-map.html",
+                    "uri": str(html_path),
                     "description": "Placeholder spatial domain map.",
                 }
             ],
