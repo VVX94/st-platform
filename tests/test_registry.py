@@ -30,8 +30,10 @@ class RegistryTests(unittest.TestCase):
                 "graphst",
                 "mock-domain",
                 "sedr",
+                "spaceflow-lite",
                 "spagcn",
                 "spagcn-lite",
+                "stagate-lite",
             },
             algorithm_ids,
         )

@@ -8,8 +8,10 @@ from st_platform.algorithms.const import ConSTDomainAlgorithm
 from st_platform.algorithms.deepst import DeepSTDomainAlgorithm
 from st_platform.algorithms.graphst import GraphSTDomainAlgorithm
 from st_platform.algorithms.sedr import SEDRDomainAlgorithm
+from st_platform.algorithms.spaceflow_lite import SpaceFlowLiteDomainAlgorithm
 from st_platform.algorithms.spagcn import SpaGCNDomainAlgorithm
 from st_platform.algorithms.spagcn_lite import SpaGCNLiteDomainAlgorithm
+from st_platform.algorithms.stagate_lite import STAGATELiteDomainAlgorithm
 from st_platform.data import SpatialDataBundle
 from st_platform.tasks import TaskType
 
@@ -145,6 +147,8 @@ def build_builtin_algorithms() -> Iterable[Algorithm]:
         SEDRDomainAlgorithm(),
         SpaGCNDomainAlgorithm(),
         SpaGCNLiteDomainAlgorithm(),
+        STAGATELiteDomainAlgorithm(),
+        SpaceFlowLiteDomainAlgorithm(),
         MockDeconvolutionAlgorithm(),
     ]
 
