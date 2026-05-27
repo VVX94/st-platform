@@ -8,6 +8,46 @@ from typing import List
 import numpy as np
 
 
+def compute_ari(true_labels: np.ndarray, pred_labels: np.ndarray) -> float:
+    """Adjusted Rand Index between ground-truth and predicted labels.
+
+    Parameters
+    ----------
+    true_labels : np.ndarray
+        1-D array of ground-truth labels.
+    pred_labels : np.ndarray
+        1-D array of predicted labels.
+
+    Returns
+    -------
+    float
+        ARI score in [-1, 1].
+    """
+    from sklearn.metrics import adjusted_rand_score
+
+    return float(adjusted_rand_score(np.asarray(true_labels), np.asarray(pred_labels)))
+
+
+def compute_nmi(true_labels: np.ndarray, pred_labels: np.ndarray) -> float:
+    """Normalized Mutual Information between ground-truth and predicted labels.
+
+    Parameters
+    ----------
+    true_labels : np.ndarray
+        1-D array of ground-truth labels.
+    pred_labels : np.ndarray
+        1-D array of predicted labels.
+
+    Returns
+    -------
+    float
+        NMI score in [0, 1].
+    """
+    from sklearn.metrics import normalized_mutual_info_score
+
+    return float(normalized_mutual_info_score(np.asarray(true_labels), np.asarray(pred_labels)))
+
+
 def compute_spatial_neighbor_agreement(
     labels: np.ndarray, coordinates: np.ndarray, k: int = 6
 ) -> float:

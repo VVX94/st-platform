@@ -5,12 +5,13 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from sqlalchemy.orm import Session
 
 from st_platform.core.registry import AlgorithmRegistry
 from st_platform.core.runner import LocalRunner
+from st_platform.data import DataAsset, DatasetRef, SpatialDataBundle
 from st_platform.storage.models import ArtifactModel, RunModel
 from st_platform.storage.repositories import RunRepo
 from st_platform.tasks import TaskType
@@ -126,6 +127,59 @@ def _generate_run_reports(run_id: str, result, db: Session) -> None:
         logger.warning("Failed to commit report artifacts for run %s", run_id, exc_info=True)
 
 
+def _compute_clustering_metrics(
+    metrics: Dict[str, float],
+    result: Any,
+    ground_truth_labels: list,
+) -> Dict[str, float]:
+    """Compute ARI and NMI from domain assignments vs ground-truth labels.
+
+    Extracts predicted domain labels from the run's domain_assignments artifact
+    and compares them to the ground-truth labels.
+    """
+    import numpy as np
+
+    from st_platform.benchmark.metrics import compute_ari, compute_nmi
+
+    artifacts = result.artifacts or []
+    domain_artifact = None
+    for art in artifacts:
+        if art.get("kind") == "domain_assignments":
+            domain_artifact = art
+            break
+
+    if domain_artifact is None:
+        logger.warning("No domain_assignments artifact found; skipping ARI/NMI.")
+        return metrics
+
+    try:
+        uri = domain_artifact.get("uri", "")
+        domain_data = json.loads(Path(uri).read_text(encoding="utf-8"))
+        domains = domain_data.get("domains", [])
+        if not domains:
+            logger.warning("Empty domains list in artifact; skipping ARI/NMI.")
+            return metrics
+
+        pred_labels = np.array([d["domain"] for d in domains])
+        true_labels = np.array(ground_truth_labels)
+
+        if len(pred_labels) != len(true_labels):
+            logger.warning(
+                "Label count mismatch: predicted=%d, truth=%d; skipping ARI/NMI.",
+                len(pred_labels),
+                len(true_labels),
+            )
+            return metrics
+
+        metrics["ari"] = compute_ari(true_labels, pred_labels)
+        metrics["nmi"] = compute_nmi(true_labels, pred_labels)
+        logger.info("Computed ARI=%.4f, NMI=%.4f", metrics["ari"], metrics["nmi"])
+    except Exception:
+        logger.warning("Failed to compute ARI/NMI", exc_info=True)
+
+    return metrics
+
+
 def poll_runs(
     db: Session,
     runner: LocalRunner,
@@ -177,28 +231,46 @@ def poll_runs(
         is_demo = dataset_info.get("metadata", {}).get("demo", False)
 
         # Build data bundle - use demo if dataset is flagged as demo or no real URI
+        ds_platform = dataset_info.get("platform", "")
+        ds_uri = dataset_info.get("uri", "")
+        ds_metadata = dataset_info.get("metadata", {})
+
         if is_demo and build_demo_bundle is not None:
             data = build_demo_bundle()
-        elif build_demo_bundle is not None and not dataset_info.get("uri"):
+        elif build_demo_bundle is not None and not ds_uri:
             # No real URI and demo builder available: use demo
             data = build_demo_bundle()
-        elif dataset_info.get("uri") and not is_demo:
-            # Real dataset URI - for now fail gracefully with a clear message
-            uri = dataset_info.get("uri", "")
+        elif ds_uri and ds_platform == "h5ad":
+            # Real h5ad dataset - load from file
+            try:
+                from st_platform.io.h5ad_reader import read_h5ad_to_bundle
+
+                data = read_h5ad_to_bundle(
+                    path=ds_uri,
+                    spatial_key=ds_metadata.get("spatial_key", "spatial"),
+                    label_column=ds_metadata.get("label_column"),
+                )
+            except Exception as exc:
+                repo.mark_failed(
+                    run.run_id,
+                    f"Failed to load h5ad dataset from {ds_uri}: {exc}",
+                )
+                processed += 1
+                continue
+        elif ds_uri and not is_demo:
+            # Other real dataset types not yet supported
             repo.mark_failed(
                 run.run_id,
-                f"Real dataset loading not yet implemented. Dataset URI: {uri}",
+                f"Real dataset loading not yet implemented for platform '{ds_platform}'. Dataset URI: {ds_uri}",
             )
             processed += 1
             continue
         else:
             # Fallback: build a minimal bundle from dataset_info
-            from st_platform.data import DataAsset, DatasetRef, SpatialDataBundle
-
             data = SpatialDataBundle(
                 dataset=DatasetRef(
                     dataset_id=dataset_info.get("dataset_id", "unknown"),
-                    platform=dataset_info.get("platform", "visium"),
+                    platform=ds_platform or "visium",
                     sample_id=dataset_info.get("sample_id", "unknown"),
                 ),
                 assets=[
@@ -225,10 +297,18 @@ def poll_runs(
 
         # Write results back
         if result.status.value == "succeeded":
+            # Compute ARI/NMI if ground-truth labels are available
+            result_metrics = dict(result.metrics) if result.metrics else {}
+            ground_truth_labels = data.metadata.get("labels")
+            if ground_truth_labels is not None:
+                result_metrics = _compute_clustering_metrics(
+                    result_metrics, result, ground_truth_labels
+                )
+
             repo.mark_succeeded(
                 run.run_id,
                 summary=result.summary,
-                metrics=result.metrics,
+                metrics=result_metrics,
                 artifacts=result.artifacts,
             )
             # Generate report artifacts (non-fatal)

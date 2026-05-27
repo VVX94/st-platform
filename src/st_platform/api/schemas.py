@@ -38,6 +38,14 @@ class DatasetCreate(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
+class DatasetRegisterReal(BaseModel):
+    name: str
+    path: str  # local h5ad file path
+    spatial_key: str = "spatial"
+    label_column: Optional[str] = None
+    description: str = ""
+
+
 class DatasetOut(BaseModel):
     dataset_id: str
     name: str

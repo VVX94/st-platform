@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from st_platform.api.deps import get_db_session
-from st_platform.api.schemas import DatasetCreate, DatasetOut
+from st_platform.api.schemas import DatasetCreate, DatasetOut, DatasetRegisterReal
 from st_platform.storage.models import DatasetModel
 from st_platform.storage.repositories import DatasetRepo
 
@@ -65,6 +65,38 @@ async def register_demo_dataset(db: Session = Depends(get_db_session)) -> Datase
         uri="demo://starmap-by3-1k",
         description="Built-in STARmap demo dataset for smoke testing.",
         metadata={"spot_count": 9, "gene_count": 5, "demo": True},
+    )
+    return _model_to_out(ds)
+
+
+@router.post("/api/datasets/register-real", response_model=DatasetOut, status_code=201)
+async def register_real_dataset(
+    payload: DatasetRegisterReal,
+    db: Session = Depends(get_db_session),
+) -> DatasetOut:
+    """Register a real h5ad dataset by reading it from a local file path."""
+    from st_platform.io.h5ad_reader import read_h5ad_to_bundle
+
+    bundle = read_h5ad_to_bundle(
+        path=payload.path,
+        spatial_key=payload.spatial_key,
+        label_column=payload.label_column,
+    )
+
+    repo = DatasetRepo(db)
+    ds = repo.create(
+        name=payload.name,
+        platform="h5ad",
+        sample_id=bundle.dataset.sample_id,
+        uri=payload.path,
+        description=payload.description or f"Real h5ad dataset from {payload.path}",
+        metadata={
+            "n_obs": bundle.metadata.get("n_obs"),
+            "n_vars": bundle.metadata.get("n_vars"),
+            "label_column": payload.label_column,
+            "spatial_key": payload.spatial_key,
+            "demo": False,
+        },
     )
     return _model_to_out(ds)
 
