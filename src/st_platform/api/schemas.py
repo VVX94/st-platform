@@ -25,6 +25,7 @@ class AlgorithmOut(BaseModel):
     version: str
     description: str
     tags: List[str] = []
+    available: bool = True
 
 
 # ---------- Dataset ----------

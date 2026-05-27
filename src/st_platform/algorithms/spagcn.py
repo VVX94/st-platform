@@ -37,6 +37,13 @@ class SpaGCNDomainAlgorithm(Algorithm):
         tags=("classic", "spagcn", "domain", "gcn"),
     )
 
+    def is_available(self) -> bool:
+        try:
+            from SpaGCN import SpaGCN  # noqa: F401
+            return True
+        except ImportError:
+            return False
+
     def run(
         self,
         data: SpatialDataBundle,

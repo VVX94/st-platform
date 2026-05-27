@@ -37,6 +37,13 @@ class SEDRDomainAlgorithm(Algorithm):
         tags=("classic", "sedr", "domain", "representation"),
     )
 
+    def is_available(self) -> bool:
+        try:
+            from SEDR.SEDR_model import Sedr  # noqa: F401
+            return True
+        except ImportError:
+            return False
+
     def run(
         self,
         data: SpatialDataBundle,

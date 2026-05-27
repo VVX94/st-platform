@@ -37,6 +37,13 @@ class GraphSTDomainAlgorithm(Algorithm):
         tags=("classic", "graphst", "domain", "representation"),
     )
 
+    def is_available(self) -> bool:
+        try:
+            from GraphST.GraphST import GraphST  # noqa: F401
+            return True
+        except ImportError:
+            return False
+
     def run(
         self,
         data: SpatialDataBundle,

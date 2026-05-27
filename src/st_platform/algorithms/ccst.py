@@ -39,6 +39,13 @@ class CCSTDomainAlgorithm(Algorithm):
         tags=("classic", "ccst", "domain", "dgi"),
     )
 
+    def is_available(self) -> bool:
+        try:
+            import torch_geometric  # noqa: F401
+            return True
+        except ImportError:
+            return False
+
     def run(
         self,
         data: SpatialDataBundle,

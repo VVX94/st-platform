@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Card, Table, Button, Form, Input, Select, Checkbox, Space, Progress, Badge, message } from "antd";
-import { PlusOutlined, PlayCircleOutlined, SyncOutlined } from "@ant-design/icons";
+import { Card, Table, Button, Form, Input, Select, Checkbox, Space, Progress, Badge, Tooltip, message } from "antd";
+import { PlusOutlined, PlayCircleOutlined, SyncOutlined, WarningOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import ReactECharts from "echarts-for-react";
 import { api, type Run, type WorkerPollResponse } from "../api/client";
@@ -22,6 +22,7 @@ interface Algorithm {
   algorithm_id: string;
   name: string;
   task_type: string;
+  available: boolean;
 }
 
 interface Dataset {
@@ -46,6 +47,12 @@ export default function Experiments() {
   const [autoRefresh, setAutoRefresh] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [creating, setCreating] = useState(false);
+  const formTaskType = Form.useWatch("taskType", form) || "domain_detection";
+
+  // Filter algorithms by selected task type, sort available first
+  const filteredAlgorithms = algorithms
+    .filter((a) => a.task_type === formTaskType)
+    .sort((a, b) => (a.available === b.available ? 0 : a.available ? -1 : 1));
 
   const loadExperiments = useCallback(() => {
     api.get<Experiment[]>("/api/experiments").then(setExperiments).catch((e) => setError(String(e)));
@@ -189,7 +196,7 @@ export default function Experiments() {
 
       {showForm && (
         <Card size="small" style={{ marginBottom: 16 }}>
-          <Form form={form} layout="vertical" style={{ maxWidth: 500 }}>
+          <Form form={form} layout="vertical" style={{ maxWidth: 500 }} onValuesChange={(changed) => { if (changed.taskType) setSelectedAlgos([]); }}>
             <Form.Item name="name" label={t("experiments.experimentName")} rules={[{ required: true }]}>
               <Input />
             </Form.Item>
@@ -201,8 +208,16 @@ export default function Experiments() {
             </Form.Item>
             <Form.Item label={t("experiments.selectAlgorithms")}>
               <Checkbox.Group value={selectedAlgos} onChange={(v) => setSelectedAlgos(v as string[])} style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                {algorithms.map((a) => <Checkbox key={a.algorithm_id} value={a.algorithm_id}>{a.algorithm_id}</Checkbox>)}
+                {filteredAlgorithms.map((a) => (
+                  <Tooltip key={a.algorithm_id} title={a.available ? undefined : "Dependencies not installed"}>
+                    <Checkbox value={a.algorithm_id} disabled={!a.available}>
+                      {a.algorithm_id}
+                      {!a.available && <WarningOutlined style={{ color: "#D97706", marginLeft: 4, fontSize: 12 }} />}
+                    </Checkbox>
+                  </Tooltip>
+                ))}
               </Checkbox.Group>
+              {filteredAlgorithms.length === 0 && <span style={{ color: "#64748B" }}>No algorithms for this task type.</span>}
             </Form.Item>
             <Button type="primary" onClick={handleCreateExperiment} loading={creating}>{t("experiments.create")}</Button>
           </Form>

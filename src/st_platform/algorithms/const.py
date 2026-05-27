@@ -39,6 +39,13 @@ class ConSTDomainAlgorithm(Algorithm):
         tags=("classic", "const", "domain", "contrastive"),
     )
 
+    def is_available(self) -> bool:
+        try:
+            import torch  # noqa: F401
+            return True
+        except ImportError:
+            return False
+
     def run(
         self,
         data: SpatialDataBundle,

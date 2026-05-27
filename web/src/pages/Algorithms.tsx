@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Table, Tag, Card } from "antd";
+import { Table, Tag, Card, Tooltip } from "antd";
+import { CheckCircleOutlined, CloseCircleOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
 
@@ -11,6 +12,7 @@ interface Algorithm {
   version: string;
   description: string;
   tags: string[];
+  available: boolean;
 }
 
 const familyColors: Record<string, string> = {
@@ -51,7 +53,16 @@ export default function Algorithms() {
     { title: t("common.id"), dataIndex: "algorithm_id", key: "id" },
     {
       title: t("common.name"), dataIndex: "name", key: "name",
-      render: (name: string, record: Algorithm) => <Tag color={getAlgoColor(record.algorithm_id)}>{name}</Tag>,
+      render: (name: string, record: Algorithm) => (
+        <span>
+          <Tag color={getAlgoColor(record.algorithm_id)}>{name}</Tag>
+          {record.available ? (
+            <Tooltip title="Available"><CheckCircleOutlined style={{ color: "#16A34A", fontSize: 14 }} /></Tooltip>
+          ) : (
+            <Tooltip title="Missing dependencies"><CloseCircleOutlined style={{ color: "#DC2626", fontSize: 14 }} /></Tooltip>
+          )}
+        </span>
+      ),
     },
     { title: t("algorithms.taskType"), dataIndex: "task_type", key: "task_type" },
     { title: t("algorithms.runtime"), dataIndex: "runtime", key: "runtime" },
@@ -69,11 +80,14 @@ export default function Algorithms() {
 
       {Object.keys(taskTypeGroups).length > 0 && (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
-          {Object.entries(taskTypeGroups).map(([taskType, algos]) => (
-            <Tag key={taskType} color="blue">
-              {taskType}: {algos.length} {t("algorithms.algorithmCount", { count: algos.length })}
-            </Tag>
-          ))}
+          {Object.entries(taskTypeGroups).map(([taskType, algos]) => {
+            const available = algos.filter((a) => a.available).length;
+            return (
+              <Tag key={taskType} color="blue">
+                {taskType}: {available}/{algos.length} available
+              </Tag>
+            );
+          })}
         </div>
       )}
 
@@ -88,6 +102,7 @@ export default function Algorithms() {
               <div style={{ padding: "8px 0" }}>
                 <p><strong>{t("common.description")}:</strong> {record.description || t("algorithms.noDescription")}</p>
                 <p><strong>{t("algorithms.supportsTask")}:</strong> {record.task_type}</p>
+                {!record.available && <p style={{ color: "#DC2626" }}>Dependencies not installed. Install the required package to enable this algorithm.</p>}
               </div>
             ),
           }}

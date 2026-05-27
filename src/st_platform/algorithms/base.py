@@ -41,6 +41,10 @@ class AlgorithmOutput:
 class Algorithm(ABC):
     spec: AlgorithmSpec
 
+    def is_available(self) -> bool:
+        """Return True if this algorithm's dependencies are installed."""
+        return True
+
     @abstractmethod
     def run(
         self,
