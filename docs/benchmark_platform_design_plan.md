@@ -81,9 +81,12 @@
 
 - FastAPI 后端。
 - React 管理后台。
-- 本地异步 worker。
-- SQLite 元数据存储。
-- 文件系统 artifact 存储。
+- 异步 worker。
+- 开发模式 SQLite 元数据存储。
+- 生产部署目标 Postgres 元数据存储。
+- Redis 队列。
+- 文件系统 artifact volume。
+- Docker Compose 部署骨架。
 - h5ad 和 10x Visium 数据读取。
 - 空间域/聚类算法评测。
 - 核心 + 空间指标。
@@ -95,12 +98,12 @@
 
 - 登录、用户、角色、权限和审计。
 - 浏览器大文件上传。
-- Docker / 容器 runner。
 - 多机/集群调度。
-- 并发任务调度。
-- 任务取消。
+- 复杂并发任务调度。
+- 完整容器化算法隔离 runner。
+- 弹性扩缩容。
+- 完整生产级监控告警。
 - 完整论文级指标集。
-- 生产级部署和监控。
 
 这些能力作为后续阶段规划。
 
@@ -121,6 +124,7 @@ st-platform/
 │  ├─ tasks/                # 现有任务定义
 │  └─ workflows/            # 现有 PlatformService
 ├─ web/                     # React 管理后台
+├─ deploy/                  # Docker Compose、Nginx、env 示例和部署脚本
 ├─ scripts/                 # 启动 worker、初始化数据库、迁移辅助脚本
 ├─ docs/
 └─ runs/                    # artifact 根目录
@@ -133,6 +137,59 @@ st-platform/
 - `io/` 负责把真实数据转换成平台统一数据对象。
 - `storage/` 负责 SQLite 和 artifact 索引，不把持久化逻辑散落在 service 中。
 - React 前端只通过 API 访问平台，不直接读取本地文件。
+
+### 4.1 部署目标
+
+最终部署目标面向阿里云服务器上的 Web 服务。首个可部署形态采用单机 Docker Compose，后续再根据真实负载演进到更强的单机规格、多机部署或托管数据库/对象存储。
+
+首个部署拓扑：
+
+```text
+Nginx / web
+  -> React static assets
+  -> reverse proxy /api to FastAPI
+
+FastAPI api
+  -> Postgres metadata database
+  -> Redis queue
+  -> artifact volume
+
+worker
+  -> Redis queue
+  -> algorithm runner
+  -> artifact volume
+```
+
+建议部署目录：
+
+```text
+deploy/
+├─ docker-compose.yml
+├─ api.Dockerfile
+├─ worker.Dockerfile
+├─ web.Dockerfile
+├─ nginx.conf
+└─ .env.example
+```
+
+服务边界：
+
+| 服务 | 职责 | 初期资源策略 |
+|---|---|---|
+| `web` | 托管 React 静态资源，反向代理 API | 静态服务，保持轻量 |
+| `api` | FastAPI 路由、鉴权、实验配置、状态查询 | 不执行长任务，只入队和查询 |
+| `worker` | 后台执行 benchmark run、写 metrics/artifacts | 默认低并发，优先保证稳定 |
+| `postgres` | 生产元数据存储 | 保存 dataset、experiment、run、metric、artifact 索引 |
+| `redis` | 队列和短期状态 | 只承担任务队列和轻量状态 |
+| `artifact volume` | 保存报告、图、预测表和运行日志 | 大文件不进入 Git，只通过 manifest 审计 |
+
+资源约束原则：
+
+- 初期按小资源单机环境设计，避免把 API、Web 和算法执行耦合在同一进程。
+- 默认 worker 并发为低并发，算法 run 通过队列串行或小并发执行。
+- demo 和 smoke test 使用小型数据集和低训练轮数，完整 benchmark 作为后台任务运行。
+- 大型数据、模型权重、报告图片和 CSV/JSON 产物只落 artifact volume，不进入 Git。
+- 文档不固化临时测试服务器规格，只记录可扩展部署原则和资源敏感策略。
 
 ## 5. 后端模块设计
 
