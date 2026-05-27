@@ -17,6 +17,7 @@ runs/
 !.env.example
 *.log
 logs/
+.codex/
 
 # Local databases and queue state
 *.db

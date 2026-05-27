@@ -48,14 +48,16 @@ If there is no newer user instruction and no active sprint, start with the highe
 
 Current recommended next sprint:
 
-`SPRINT-20260527-007-artifact-access-report-preview`
+`SPRINT-20260527-008-web-benchmark-experience`
 
 Goal:
 
-- Fix the broken Reports artifact flow.
-- Add backend artifact download/preview API.
-- Stop exposing server absolute paths to the frontend.
-- Make Web reports show generated plots and download CSV artifacts.
+- Implement the plan in `docs/harness/sprints/SPRINT-20260527-008-web-benchmark-experience/implementation_plan.md`.
+- Upgrade the Web UI into an SDMBench-like scientific benchmark portal.
+- Add a consistent design system and Chinese/English language switch.
+- Show run progress through a progress bar and stage timeline.
+- Fix the Reports artifact flow with controlled backend preview/download URLs.
+- Make Web reports show generated plots and CSV/JSON downloads.
 - Add API tests and, if feasible in the environment, Playwright or equivalent frontend smoke coverage.
 
 Current north star:
