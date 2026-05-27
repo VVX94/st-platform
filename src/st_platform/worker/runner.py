@@ -31,7 +31,11 @@ def _run_to_bundle_params(run: RunModel) -> dict:
 def _relative_uri(absolute_path: str) -> str:
     """Convert an absolute path under the project root to a relative path."""
     abs_p = Path(absolute_path).resolve()
-    project_root = Path(__file__).resolve().parents[4]
+    # runner.py is at src/st_platform/worker/runner.py (depth 5),
+    # so parents[3] = st-platform/ (the project root).
+    # This matches artifacts.py's parents[4] because artifacts.py
+    # is one level deeper at src/st_platform/api/routes/artifacts.py.
+    project_root = Path(__file__).resolve().parents[3]
     try:
         return str(abs_p.relative_to(project_root))
     except ValueError:
