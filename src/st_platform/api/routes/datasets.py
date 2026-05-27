@@ -14,6 +14,30 @@ from st_platform.storage.repositories import DatasetRepo
 router = APIRouter()
 
 
+def _register_starmap_demo(repo: DatasetRepo) -> DatasetModel:
+    """Register the built-in STARmap demo dataset."""
+    return repo.create(
+        name="STARmap BY3 1k (Demo)",
+        platform="starmap",
+        sample_id="BY3_1k",
+        uri="demo://starmap-by3-1k",
+        description="Built-in STARmap demo dataset for smoke testing.",
+        metadata={"spot_count": 9, "gene_count": 5, "demo": True},
+    )
+
+
+def _register_osmfish_demo(repo: DatasetRepo) -> DatasetModel:
+    """Register a mock osmFISH demo dataset."""
+    return repo.create(
+        name="osmFISH Mouse SS (Demo)",
+        platform="osmfish",
+        sample_id="mouse_ss",
+        uri="demo://osmfish-mouse-ss",
+        description="Mock osmFISH demo dataset for multi-algorithm benchmark testing.",
+        metadata={"spot_count": 9, "gene_count": 5, "demo": True},
+    )
+
+
 def _model_to_out(ds: DatasetModel) -> DatasetOut:
     try:
         meta = json.loads(ds.metadata_json)
@@ -58,15 +82,19 @@ async def register_dataset(
 async def register_demo_dataset(db: Session = Depends(get_db_session)) -> DatasetOut:
     """Register the built-in STARmap demo dataset for smoke testing."""
     repo = DatasetRepo(db)
-    ds = repo.create(
-        name="STARmap BY3 1k (Demo)",
-        platform="starmap",
-        sample_id="BY3_1k",
-        uri="demo://starmap-by3-1k",
-        description="Built-in STARmap demo dataset for smoke testing.",
-        metadata={"spot_count": 9, "gene_count": 5, "demo": True},
-    )
+    ds = _register_starmap_demo(repo)
     return _model_to_out(ds)
+
+
+@router.post("/api/datasets/register-demo-all", response_model=List[DatasetOut], status_code=201)
+async def register_all_demo_datasets(db: Session = Depends(get_db_session)) -> List[DatasetOut]:
+    """Register all built-in demo datasets (STARmap and osmFISH)."""
+    repo = DatasetRepo(db)
+    results = [
+        _register_starmap_demo(repo),
+        _register_osmfish_demo(repo),
+    ]
+    return [_model_to_out(ds) for ds in results]
 
 
 @router.post("/api/datasets/register-real", response_model=DatasetOut, status_code=201)

@@ -186,6 +186,21 @@ async def get_experiment_report(
                 )
             )
 
+    # Build algorithm comparison summary for multi-algorithm experiments
+    comparison_summary: dict = {}
+    succeeded_runs = [r for r in runs_out if r.status == "succeeded" and r.metrics]
+    algo_ids = sorted(set(r.algorithm_id for r in succeeded_runs))
+    if len(algo_ids) > 1:
+        for algo_id in algo_ids:
+            algo_runs = [r for r in succeeded_runs if r.algorithm_id == algo_id]
+            algo_metrics: dict = {}
+            all_metric_names = sorted(set(name for r in algo_runs for name in r.metrics))
+            for metric_name in all_metric_names:
+                values = [r.metrics[metric_name] for r in algo_runs if metric_name in r.metrics]
+                if values:
+                    algo_metrics[metric_name] = sum(values) / len(values)
+            comparison_summary[algo_id] = algo_metrics
+
     return ExperimentReportOut(
         experiment_id=exp.experiment_id,
         name=exp.name,
@@ -193,5 +208,6 @@ async def get_experiment_report(
         task_type=exp.task_type,
         runs=runs_out,
         metrics_summary=summary_stats,
+        comparison_summary=comparison_summary,
         artifacts=all_artifacts,
     )

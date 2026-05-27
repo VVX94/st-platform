@@ -221,6 +221,36 @@ def generate_markdown_report(
             )
         lines.append("")
 
+    # Algorithm Comparison (when multiple algorithms present)
+    succeeded_runs = [r for r in runs_data if r.get("status") == "succeeded" and r.get("metrics")]
+    algo_ids_seen = sorted(set(r.get("algorithm_id", "") for r in succeeded_runs))
+    if len(algo_ids_seen) > 1:
+        # Collect all metric names across all succeeded runs
+        all_metric_names = sorted(
+            set(name for r in succeeded_runs for name in r.get("metrics", {}).keys())
+        )
+        if all_metric_names:
+            lines.append("## Algorithm Comparison")
+            lines.append("")
+            # Header: | Algorithm | metric1 | metric2 | ... |
+            header = "| Algorithm | " + " | ".join(all_metric_names) + " |"
+            separator = "|-----------|" + "|".join("--------" for _ in all_metric_names) + "|"
+            lines.append(header)
+            lines.append(separator)
+            for algo_id in algo_ids_seen:
+                # For each algorithm, average metrics across its runs
+                algo_runs = [r for r in succeeded_runs if r.get("algorithm_id") == algo_id]
+                cells = []
+                for metric_name in all_metric_names:
+                    values = [r["metrics"][metric_name] for r in algo_runs if metric_name in r.get("metrics", {})]
+                    if values:
+                        avg_val = sum(values) / len(values)
+                        cells.append(f"{avg_val:.4f}")
+                    else:
+                        cells.append("-")
+                lines.append(f"| {algo_id} | " + " | ".join(cells) + " |")
+            lines.append("")
+
     # Per-run details
     for run in runs_data:
         lines.append(f"## Run: {run.get('algorithm_id', '')} (`{run.get('run_id', '')}`)")

@@ -55,6 +55,7 @@ export interface ExperimentReport {
   task_type: string;
   runs: Run[];
   metrics_summary: Record<string, { avg: number; min: number; max: number; count: number }>;
+  comparison_summary: Record<string, Record<string, number>>;
   artifacts: Artifact[];
 }
 
@@ -79,6 +80,8 @@ export const api = {
     request<WorkerPollResponse>("/api/worker/poll", { method: "POST" }),
   registerDemoDataset: () =>
     request<unknown>("/api/datasets/register-demo", { method: "POST" }),
+  registerAllDemoDatasets: () =>
+    request<unknown[]>("/api/datasets/register-demo-all", { method: "POST" }),
   getExperimentReport: (experimentId: string) =>
     request<ExperimentReport>(`/api/experiments/${experimentId}/report`),
 };

@@ -129,6 +129,7 @@ class ExperimentReportOut(BaseModel):
     task_type: str = ""
     runs: List[RunOut] = Field(default_factory=list)
     metrics_summary: Dict[str, Any] = Field(default_factory=dict)
+    comparison_summary: Dict[str, Dict[str, float]] = Field(default_factory=dict)
     artifacts: List[ArtifactOut] = Field(default_factory=list)
 
 
