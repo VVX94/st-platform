@@ -5,8 +5,43 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .venv/
+.venv*/
 venv/
 build/
 dist/
 runs/
+
+# Local configuration and logs
+.env
+.env.*
+!.env.example
+*.log
+logs/
+
+# Local databases and queue state
+*.db
+*.sqlite
+*.sqlite3
+*.duckdb
+
+# Generated benchmark and report artifacts
+benchmark_results/
+presentation_results/**/*.csv
+presentation_results/**/*.json
+presentation_results/**/*.png
+presentation_results/**/*.pdf
+presentation_results/**/*.html
+
+# Local datasets and upload/cache directories
+uploads/
+artifacts/
+data/raw/
+data/interim/
+data/processed/
+
+# Frontend dependencies and build outputs
+web/node_modules/
+web/dist/
+web/.vite/
+web/coverage/
 
