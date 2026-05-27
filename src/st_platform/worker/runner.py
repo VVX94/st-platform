@@ -14,7 +14,7 @@ from st_platform.core.registry import AlgorithmRegistry
 from st_platform.core.runner import LocalRunner
 from st_platform.data import DataAsset, DatasetRef, SpatialDataBundle
 from st_platform.storage.models import ArtifactModel, RunModel
-from st_platform.storage.repositories import RunRepo
+from st_platform.storage.repositories import ExperimentRepo, RunRepo
 from st_platform.tasks import TaskType
 
 logger = logging.getLogger(__name__)
@@ -195,22 +195,44 @@ def _compute_clustering_metrics(
     return metrics
 
 
+def _update_experiment_status(db: Session, experiment_id: Optional[str]) -> None:
+    """Check if all runs for an experiment are done and update its status."""
+    if not experiment_id:
+        return
+    run_repo = RunRepo(db)
+    all_runs = run_repo.list_all()
+    exp_runs = [r for r in all_runs if r.experiment_id == experiment_id]
+    if not exp_runs:
+        return
+    statuses = {r.status for r in exp_runs}
+    if statuses <= {"succeeded", "failed"}:
+        final_status = "succeeded" if statuses == {"succeeded"} else "failed"
+        exp_repo = ExperimentRepo(db)
+        exp_repo.update_status(experiment_id, final_status)
+        logger.info("Experiment %s -> %s", experiment_id, final_status)
+
+
 def poll_runs(
     db: Session,
     runner: LocalRunner,
     registry: AlgorithmRegistry,
     build_demo_bundle: Optional[callable] = None,
-    limit: int = 10,
+    limit: int = 0,
 ) -> int:
     """Poll queued runs, execute them, and write results back.
 
     Returns the number of runs processed.
     """
     repo = RunRepo(db)
-    queued = repo.list_queued()[:limit]
+    queued = repo.list_queued()
+    if limit > 0:
+        queued = queued[:limit]
 
     if not queued:
         return 0
+
+    # Track which experiments are affected
+    affected_experiments: set = set()
 
     processed = 0
     for run in queued:
@@ -356,6 +378,15 @@ def poll_runs(
             repo.mark_failed(run.run_id, result.error or "Unknown error")
 
         processed += 1
+        if run.experiment_id:
+            affected_experiments.add(run.experiment_id)
         logger.info("Processed run %s -> %s", run.run_id, result.status.value)
+
+    # Update experiment statuses after all runs processed
+    for exp_id in affected_experiments:
+        try:
+            _update_experiment_status(db, exp_id)
+        except Exception:
+            logger.warning("Failed to update experiment %s status", exp_id, exc_info=True)
 
     return processed
