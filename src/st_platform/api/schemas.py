@@ -97,6 +97,7 @@ class MetricOut(BaseModel):
     run_id: str
     name: str
     value: float
+    created_at: Optional[datetime] = None
 
 
 # ---------- Artifact ----------
@@ -108,3 +109,10 @@ class ArtifactOut(BaseModel):
     uri: str
     description: str
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    created_at: Optional[datetime] = None
+
+
+# ---------- Worker ----------
+
+class WorkerPollResponse(BaseModel):
+    processed: int

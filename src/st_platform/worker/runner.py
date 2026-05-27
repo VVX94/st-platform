@@ -66,13 +66,34 @@ def poll_runs(
         # Mark running
         repo.mark_running(run.run_id)
 
-        # Build data bundle - use demo if no real data source
-        if build_demo_bundle is not None:
+        # Determine dataset info from the run's dataset_json
+        dataset_info = {}
+        try:
+            dataset_info = json.loads(run.dataset_json) if run.dataset_json else {}
+        except (json.JSONDecodeError, TypeError):
+            dataset_info = {}
+
+        is_demo = dataset_info.get("metadata", {}).get("demo", False)
+
+        # Build data bundle - use demo if dataset is flagged as demo or no real URI
+        if is_demo and build_demo_bundle is not None:
             data = build_demo_bundle()
+        elif build_demo_bundle is not None and not dataset_info.get("uri"):
+            # No real URI and demo builder available: use demo
+            data = build_demo_bundle()
+        elif dataset_info.get("uri") and not is_demo:
+            # Real dataset URI - for now fail gracefully with a clear message
+            uri = dataset_info.get("uri", "")
+            repo.mark_failed(
+                run.run_id,
+                f"Real dataset loading not yet implemented. Dataset URI: {uri}",
+            )
+            processed += 1
+            continue
         else:
+            # Fallback: build a minimal bundle from dataset_info
             from st_platform.data import DataAsset, DatasetRef, SpatialDataBundle
 
-            dataset_info = json.loads(run.dataset_json) if run.dataset_json else {}
             data = SpatialDataBundle(
                 dataset=DatasetRef(
                     dataset_id=dataset_info.get("dataset_id", "unknown"),

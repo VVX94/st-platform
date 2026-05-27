@@ -54,6 +54,21 @@ async def register_dataset(
     return _model_to_out(ds)
 
 
+@router.post("/api/datasets/register-demo", response_model=DatasetOut, status_code=201)
+async def register_demo_dataset(db: Session = Depends(get_db_session)) -> DatasetOut:
+    """Register the built-in STARmap demo dataset for smoke testing."""
+    repo = DatasetRepo(db)
+    ds = repo.create(
+        name="STARmap BY3 1k (Demo)",
+        platform="starmap",
+        sample_id="BY3_1k",
+        uri="demo://starmap-by3-1k",
+        description="Built-in STARmap demo dataset for smoke testing.",
+        metadata={"spot_count": 9, "gene_count": 5, "demo": True},
+    )
+    return _model_to_out(ds)
+
+
 @router.get("/api/datasets/{dataset_id}", response_model=DatasetOut)
 async def get_dataset(
     dataset_id: str,

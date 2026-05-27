@@ -82,3 +82,57 @@ async def get_run(
     if run is None:
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
     return _model_to_out(run)
+
+
+@router.get("/api/runs/{run_id}/metrics", response_model=List[MetricOut])
+async def get_run_metrics(
+    run_id: str,
+    db: Session = Depends(get_db_session),
+) -> List[MetricOut]:
+    """Return all metrics for a specific run."""
+    run_repo = RunRepo(db)
+    run = run_repo.get(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
+    metric_repo = MetricRepo(db)
+    return [
+        MetricOut(
+            metric_id=m.metric_id,
+            run_id=m.run_id,
+            name=m.name,
+            value=m.value,
+            created_at=m.created_at,
+        )
+        for m in metric_repo.list_for_run(run_id)
+    ]
+
+
+@router.get("/api/runs/{run_id}/artifacts", response_model=List[ArtifactOut])
+async def get_run_artifacts(
+    run_id: str,
+    db: Session = Depends(get_db_session),
+) -> List[ArtifactOut]:
+    """Return all artifacts for a specific run."""
+    run_repo = RunRepo(db)
+    run = run_repo.get(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
+    artifact_repo = ArtifactRepo(db)
+    result: List[ArtifactOut] = []
+    for a in artifact_repo.list_for_run(run_id):
+        try:
+            meta = json.loads(a.metadata_json)
+        except (json.JSONDecodeError, TypeError):
+            meta = {}
+        result.append(
+            ArtifactOut(
+                artifact_id=a.artifact_id,
+                run_id=a.run_id,
+                kind=a.kind,
+                uri=a.uri,
+                description=a.description,
+                metadata=meta,
+                created_at=a.created_at,
+            )
+        )
+    return result
