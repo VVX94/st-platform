@@ -121,8 +121,48 @@ def generate_domain_grid_plot(domain_assignments: dict, output_path: str) -> str
     return str(path)
 
 
+_METRIC_CATEGORIES = {
+    "label_dependent": ["ari", "nmi", "homogeneity", "completeness"],
+    "spatial": [
+        "spatial_neighbor_agreement",
+        "chaos",
+        "pas",
+        "morans_i",
+        "gearys_c",
+    ],
+    "general": ["asw", "runtime_seconds", "memory_peak_mb", "artifact_completeness"],
+}
+
+
+def _categorize_metrics(metrics: dict) -> dict[str, list[tuple[str, float]]]:
+    """Group metrics by category.
+
+    Returns
+    -------
+    dict
+        Keys are category names, values are lists of (metric_name, value) tuples.
+    """
+    categorized: dict[str, list[tuple[str, float]]] = {
+        cat: [] for cat in _METRIC_CATEGORIES
+    }
+    categorized["other"] = []
+
+    for name, value in metrics.items():
+        placed = False
+        for cat, cat_metrics in _METRIC_CATEGORIES.items():
+            if name in cat_metrics:
+                categorized[cat].append((name, value))
+                placed = True
+                break
+        if not placed:
+            categorized["other"].append((name, value))
+
+    # Remove empty categories
+    return {cat: items for cat, items in categorized.items() if items}
+
+
 def generate_metrics_bar_plot(metrics: dict, output_path: str) -> str:
-    """Generate bar chart of metric values.
+    """Generate bar chart of metric values grouped by category.
 
     Parameters
     ----------
@@ -146,11 +186,25 @@ def generate_metrics_bar_plot(metrics: dict, output_path: str) -> str:
         plt.close(fig)
         return str(path)
 
-    names = list(metrics.keys())
-    values = [metrics[k] for k in names]
+    categorized = _categorize_metrics(metrics)
+    category_colors = {
+        "label_dependent": "#4e79a7",
+        "spatial": "#f28e2b",
+        "general": "#59a14f",
+        "other": "#bab0ac",
+    }
+
+    names = []
+    values = []
+    colors = []
+    for cat in ["label_dependent", "spatial", "general", "other"]:
+        for name, value in categorized.get(cat, []):
+            names.append(name)
+            values.append(value)
+            colors.append(category_colors.get(cat, "#bab0ac"))
 
     fig, ax = plt.subplots(figsize=(max(6, len(names) * 1.2), 4))
-    bars = ax.bar(names, values, color="#4e79a7")
+    bars = ax.bar(names, values, color=colors)
     ax.set_ylabel("Value")
     ax.set_title("Run Metrics")
     ax.tick_params(axis="x", rotation=30)
@@ -165,6 +219,16 @@ def generate_metrics_bar_plot(metrics: dict, output_path: str) -> str:
             va="bottom",
             fontsize=8,
         )
+
+    # Add legend for categories
+    from matplotlib.patches import Patch
+    legend_elements = [
+        Patch(facecolor=category_colors[cat], label=cat.replace("_", " ").title())
+        for cat in ["label_dependent", "spatial", "general", "other"]
+        if cat in categorized
+    ]
+    if legend_elements:
+        ax.legend(handles=legend_elements, loc="upper right", fontsize=8)
 
     fig.tight_layout()
     fig.savefig(str(path), dpi=100, bbox_inches="tight")
@@ -264,11 +328,19 @@ def generate_markdown_report(
         if metrics:
             lines.append("### Metrics")
             lines.append("")
-            lines.append("| Metric | Value |")
-            lines.append("|--------|-------|")
-            for name, value in sorted(metrics.items()):
-                lines.append(f"| {name} | {value:.4f} |")
-            lines.append("")
+            categorized = _categorize_metrics(metrics)
+            for cat in ["label_dependent", "spatial", "general", "other"]:
+                items = categorized.get(cat, [])
+                if not items:
+                    continue
+                cat_label = cat.replace("_", " ").title()
+                lines.append(f"#### {cat_label}")
+                lines.append("")
+                lines.append("| Metric | Value |")
+                lines.append("|--------|-------|")
+                for name, value in sorted(items):
+                    lines.append(f"| {name} | {value:.4f} |")
+                lines.append("")
 
         artifacts = run.get("artifacts", [])
         if artifacts:

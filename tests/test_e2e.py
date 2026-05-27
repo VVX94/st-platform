@@ -234,15 +234,32 @@ class TestRealDataBenchmarkFlow:
         run_after = resp.json()
         assert run_after["status"] == "succeeded"
 
-        # 6. Verify ARI and NMI are in the metrics
+        # 6. Verify ARI, NMI, and new paper-level metrics are in the metrics
         # run_after["metrics"] is a Dict[str, float] from RunOut
         metrics = run_after.get("metrics", {})
         assert "ari" in metrics, f"ARI not found in metrics: {list(metrics.keys())}"
         assert "nmi" in metrics, f"NMI not found in metrics: {list(metrics.keys())}"
 
+        # Verify new paper-level metrics
+        expected_new_metrics = [
+            "homogeneity", "completeness", "chaos", "pas",
+            "morans_i", "gearys_c", "memory_peak_mb",
+        ]
+        for metric_name in expected_new_metrics:
+            assert metric_name in metrics, f"{metric_name} not found in metrics: {list(metrics.keys())}"
+
         # ARI should be in [-1, 1], NMI in [0, 1]
         assert -1.0 <= metrics["ari"] <= 1.0
         assert 0.0 <= metrics["nmi"] <= 1.0
+
+        # Verify ranges for new metrics
+        assert 0.0 <= metrics["homogeneity"] <= 1.0
+        assert 0.0 <= metrics["completeness"] <= 1.0
+        assert 0.0 <= metrics["chaos"] <= 1.0
+        assert 0.0 <= metrics["pas"] <= 1.0
+        assert -1.5 <= metrics["morans_i"] <= 1.5
+        assert 0.0 <= metrics["gearys_c"] <= 2.5
+        assert metrics["memory_peak_mb"] >= 0.0
 
         # Also check via the metrics endpoint
         resp = client.get(f"/api/runs/{run_id}/metrics")

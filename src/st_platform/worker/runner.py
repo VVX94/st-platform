@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import tracemalloc
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -131,15 +132,17 @@ def _compute_clustering_metrics(
     metrics: Dict[str, float],
     result: Any,
     ground_truth_labels: list,
+    features: Any = None,
 ) -> Dict[str, float]:
-    """Compute ARI and NMI from domain assignments vs ground-truth labels.
+    """Compute all applicable metrics from domain assignments.
 
-    Extracts predicted domain labels from the run's domain_assignments artifact
-    and compares them to the ground-truth labels.
+    Extracts predicted domain labels and coordinates from the run's
+    domain_assignments artifact and computes label-dependent, spatial,
+    and feature-based metrics.
     """
     import numpy as np
 
-    from st_platform.benchmark.metrics import compute_ari, compute_nmi
+    from st_platform.benchmark.metrics import compute_all_metrics
 
     artifacts = result.artifacts or []
     domain_artifact = None
@@ -149,7 +152,7 @@ def _compute_clustering_metrics(
             break
 
     if domain_artifact is None:
-        logger.warning("No domain_assignments artifact found; skipping ARI/NMI.")
+        logger.warning("No domain_assignments artifact found; skipping metrics.")
         return metrics
 
     try:
@@ -157,25 +160,37 @@ def _compute_clustering_metrics(
         domain_data = json.loads(Path(uri).read_text(encoding="utf-8"))
         domains = domain_data.get("domains", [])
         if not domains:
-            logger.warning("Empty domains list in artifact; skipping ARI/NMI.")
+            logger.warning("Empty domains list in artifact; skipping metrics.")
             return metrics
 
         pred_labels = np.array([d["domain"] for d in domains])
         true_labels = np.array(ground_truth_labels)
+        coordinates = np.array([[d.get("x", 0), d.get("y", 0)] for d in domains], dtype=float)
 
         if len(pred_labels) != len(true_labels):
             logger.warning(
-                "Label count mismatch: predicted=%d, truth=%d; skipping ARI/NMI.",
+                "Label count mismatch: predicted=%d, truth=%d; skipping metrics.",
                 len(pred_labels),
                 len(true_labels),
             )
             return metrics
 
-        metrics["ari"] = compute_ari(true_labels, pred_labels)
-        metrics["nmi"] = compute_nmi(true_labels, pred_labels)
-        logger.info("Computed ARI=%.4f, NMI=%.4f", metrics["ari"], metrics["nmi"])
+        all_metrics = compute_all_metrics(
+            pred_labels=pred_labels,
+            coordinates=coordinates,
+            features=features,
+            true_labels=true_labels,
+        )
+        metrics.update(all_metrics)
+        logger.info(
+            "Computed metrics: ARI=%.4f, NMI=%.4f, HOM=%.4f, COM=%.4f",
+            metrics.get("ari", 0),
+            metrics.get("nmi", 0),
+            metrics.get("homogeneity", 0),
+            metrics.get("completeness", 0),
+        )
     except Exception:
-        logger.warning("Failed to compute ARI/NMI", exc_info=True)
+        logger.warning("Failed to compute metrics", exc_info=True)
 
     return metrics
 
@@ -281,7 +296,8 @@ def poll_runs(
 
         params = _run_to_bundle_params(run)
 
-        # Execute
+        # Execute with memory tracking
+        tracemalloc.start()
         try:
             result = runner.execute(
                 task_type=task_type,
@@ -290,19 +306,39 @@ def poll_runs(
                 parameters=params,
             )
         except Exception as exc:
+            _, peak_bytes = tracemalloc.get_traced_memory()
+            tracemalloc.stop()
             repo.mark_failed(run.run_id, str(exc))
             logger.exception("Run %s failed with exception", run.run_id)
             processed += 1
             continue
+        _, peak_bytes = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
 
         # Write results back
         if result.status.value == "succeeded":
-            # Compute ARI/NMI if ground-truth labels are available
+            # Add memory peak metric
             result_metrics = dict(result.metrics) if result.metrics else {}
+            result_metrics["memory_peak_mb"] = peak_bytes / (1024 * 1024)
+
+            # Compute all applicable metrics if ground-truth labels are available
             ground_truth_labels = data.metadata.get("labels")
+            # Get features (expression matrix) from the data bundle
+            features_array = None
+            try:
+                for asset in data.assets:
+                    if asset.kind == "counts_table":
+                        matrix = asset.metadata.get("matrix")
+                        if matrix is not None:
+                            import numpy as np
+                            features_array = np.array(matrix, dtype=float)
+                            break
+            except Exception:
+                logger.debug("Could not extract expression matrix for ASW computation")
+
             if ground_truth_labels is not None:
                 result_metrics = _compute_clustering_metrics(
-                    result_metrics, result, ground_truth_labels
+                    result_metrics, result, ground_truth_labels, features=features_array
                 )
 
             repo.mark_succeeded(
