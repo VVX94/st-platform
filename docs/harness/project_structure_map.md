@@ -188,7 +188,7 @@ src/st_platform/
 ├─ worker/                       # async worker entrypoint and queue adapter
 
 web/                             # React 管理后台
-deploy/                          # Docker Compose, env examples, reverse proxy
+deploy/                          # 项目主功能完成后补充 Docker Compose, env examples, reverse proxy
 ```
 
 这些目录尚未存在，后续由 Generator 在对应 sprint 中创建。

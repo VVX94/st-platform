@@ -19,7 +19,7 @@
 7. 主 Docker 镜像保持轻量，重依赖算法后续拆成可选 runner 镜像或独立环境。
 8. 首期指标固定为 `core_spatial_v1`：ARI、NMI、runtime、spatial neighbor agreement、artifact completeness。
 9. STARmap 作为 smoke demo；DLPFC 151673 和 osmFISH 首期要求可登记和解析 metadata，完整 benchmark 后续推进。
-10. Docker Compose 验收必须跑通 Web、API、SQLite、OSS 写读、dataset 登记、experiment 创建、worker smoke run、OSS artifact 和 Web 报告查看。
+10. 当前运行验收必须跑通 Web、API、SQLite、OSS 写读、dataset 登记、experiment 创建、worker smoke run、OSS artifact 和 Web 报告查看；Docker Compose 打包验收在项目主功能完成后执行。
 11. 每个 sprint 必须包含 task spec、sprint contract、generator handoff、evaluator report 和 Git commit。
 
 ## 影响
@@ -28,4 +28,3 @@
 - API 设计应面向公开匿名使用，但保留格式校验、规模限制和低并发保护。
 - 后续实现时应优先交付 STARmap smoke 链路，而不是一次性跑通所有示例数据。
 - 产物继续只写 manifest，不进入 Git。
-

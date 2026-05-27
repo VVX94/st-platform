@@ -86,7 +86,6 @@
 - 阿里云 OSS 数据和 artifact 存储。
 - OSS URI 登记和基础预签名上传。
 - 本地小容量临时缓存目录。
-- Docker Compose 部署骨架。
 - h5ad 和 10x Visium 数据读取。
 - 空间域/聚类算法评测。
 - 核心 + 空间指标。
@@ -100,6 +99,7 @@
 - 多机/集群调度。
 - 复杂并发任务调度。
 - 完整容器化算法隔离 runner。
+- Docker Compose / 镜像打包交付。
 - 弹性扩缩容。
 - Redis / Celery / RQ 等独立队列服务。
 - Postgres 生产数据库迁移。
@@ -138,7 +138,7 @@ st-platform/
 │  ├─ tasks/                # 现有任务定义
 │  └─ workflows/            # 现有 PlatformService
 ├─ web/                     # React 管理后台
-├─ deploy/                  # Docker Compose、Nginx、env 示例和部署脚本
+├─ deploy/                  # 项目完成后补充 Docker Compose、Nginx、env 示例和部署脚本
 ├─ scripts/                 # 启动 worker、初始化数据库、迁移辅助脚本
 ├─ docs/
 └─ runs/                    # artifact 根目录
@@ -152,18 +152,19 @@ st-platform/
 - `storage/` 负责 SQLite 元数据、OSS 对象索引和临时缓存路径，不把持久化逻辑散落在 service 中。
 - React 前端只通过 API 访问平台，不直接读取本地文件。
 
-### 4.1 部署目标
+### 4.1 运行目标和部署目标
 
-最终部署目标面向阿里云服务器上的 Web 服务。首个可部署形态采用轻量单机 Docker Compose：服务容器尽量少，镜像尽量小，服务器本地磁盘只保存 SQLite 元数据、小型日志和运行期临时缓存；真实数据、运行产物、报告图表、预测表和模型权重统一存入阿里云 OSS。
+当前 Claude Code 长任务阶段的目标是先保证项目在本地或测试服务器上可直接运行，不把 Docker 化作为首期实现阻塞项。首期应优先跑通 API、Web、worker、SQLite、OSS 和 STARmap smoke benchmark 链路。
+
+最终部署目标仍面向阿里云服务器上的 Web 服务。项目主功能完成后，再补充轻量单机 Docker Compose 打包：服务容器尽量少，镜像尽量小，服务器本地磁盘只保存 SQLite 元数据、小型日志和运行期临时缓存；真实数据、运行产物、报告图表、预测表和模型权重统一存入阿里云 OSS。
 
 后续再根据真实负载演进到更强的单机规格、多机部署、Postgres、Redis 队列或更完整的算法容器隔离。
 
-首个部署拓扑：
+当前运行拓扑：
 
 ```text
-Nginx / web
-  -> React static assets
-  -> reverse proxy /api to FastAPI
+React dev server or static preview
+  -> calls FastAPI /api
 
 FastAPI api
   -> SQLite metadata database
@@ -177,7 +178,7 @@ worker
   -> local temp cache cleanup
 ```
 
-建议部署目录：
+项目完成后的 Docker 打包目录：
 
 ```text
 deploy/
@@ -206,7 +207,8 @@ deploy/
 - demo 和 smoke test 使用小型数据集和低训练轮数，完整 benchmark 作为后台任务运行。
 - 大型数据、模型权重、报告图片和 CSV/JSON 产物只落 OSS，不进入 Git。
 - worker 只在 run 期间把必要数据下载到本地临时目录，任务结束后清理。
-- Docker 镜像不打包原始数据、运行结果、模型 checkpoint 或完整演示产物；重依赖算法后续可拆成独立 runner 镜像。
+- 当前阶段不要求 Docker 镜像打包；项目完成后再补充 Docker 化。
+- 后续 Docker 镜像不打包原始数据、运行结果、模型 checkpoint 或完整演示产物；重依赖算法后续可拆成独立 runner 镜像。
 - 文档不固化临时测试服务器规格，只记录可扩展部署原则和资源敏感策略。
 
 ### 4.2 存储演进路线
@@ -270,7 +272,7 @@ browser / user
 
 ### 4.6 算法运行和镜像策略
 
-Docker 镜像必须保持轻量：
+当前阶段先保证算法在本地/测试服务器环境可运行，Docker 化在项目主链路完成后再处理。后续 Docker 镜像必须保持轻量：
 
 - 主 API 镜像只包含 FastAPI、storage、schema、基础 service。
 - 首期 worker 镜像只包含平台运行所需依赖和轻量算法路径。
@@ -708,7 +710,7 @@ SQLite runs 表建议增加字段：
 
 ### 14.3 部署验收
 
-首期 Docker Compose 部署必须满足：
+首期运行验收必须满足：
 
 - Web 页面可打开。
 - API health check 可访问。
@@ -721,6 +723,8 @@ SQLite runs 表建议增加字段：
 - report / table / plot artifact 写入 OSS。
 - Web 可查看 run 状态、指标表和报告下载入口。
 - 本地临时目录在 run 结束后被清理。
+
+项目完成后的 Docker 打包验收另行执行，不能阻塞当前“保证程序能运行”的实现主线。
 
 ### 14.4 Harness / CI 审计验收
 
@@ -819,6 +823,7 @@ SQLite runs 表建议增加字段：
 - 存储：SQLite 元数据 + 阿里云 OSS 数据/artifact，后续可迁移 Postgres 元数据。
 - 数据输入：登记 OSS h5ad / Visium 前缀，开发模式可用本地路径。
 - 访问策略：公益科研网站，公开匿名使用，不做登录、用户、RBAC 或 API 权限校验。
+- 当前实现目标：优先保证程序可运行；Docker Compose / 镜像打包在项目主功能完成后处理。
 - 任务范围：空间域/聚类 benchmark。
 - 指标范围：首期 `core_spatial_v1`，完整论文指标后续实现。
 - 算法范围：当前 7 个 + STAGATE + SpaceFlow。

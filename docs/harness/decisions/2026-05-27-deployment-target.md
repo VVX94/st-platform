@@ -1,7 +1,7 @@
 # Decision: 阿里云单机 Docker Compose 部署目标
 
 日期：2026-05-27  
-状态：accepted，已被 `2026-05-27-storage-oss-sqlite.md` 修正存储和数据库细节  
+状态：accepted，已被 `2026-05-27-storage-oss-sqlite.md` 修正存储和数据库细节，并被 `2026-05-27-runtime-first-docker-later.md` 修正首期交付顺序  
 关联文档：`docs/benchmark_platform_design_plan.md`
 
 ## 背景
@@ -10,7 +10,7 @@ benchmark 平台最终目标不是本地脚本或一次性 demo，而是可以�
 
 ## 决策
 
-采用单机 Docker Compose 作为首个可部署目标：
+采用单机 Docker Compose 作为项目完成后的打包目标：
 
 - `web`：React 静态资源和 Nginx 反向代理。
 - `api`：FastAPI 后端。
@@ -19,7 +19,7 @@ benchmark 平台最终目标不是本地脚本或一次性 demo，而是可以�
 - `oss`：数据集、运行产物、报告、图表和模型权重主存储。
 - `local temp`：运行期小型临时缓存，任务结束后清理。
 
-当前 Web 部署目标以 SQLite + OSS + 轻量 Docker Compose 为准。Postgres 和 Redis 作为后续升级路径，不进入首期部署默认依赖。
+当前 Web 运行目标以 SQLite + OSS + 本地/测试服务器直接运行为准。Postgres 和 Redis 作为后续升级路径，不进入首期运行默认依赖。Docker Compose 在项目主功能完成后再打包。
 
 ## 资源策略
 
@@ -33,8 +33,8 @@ benchmark 平台最终目标不是本地脚本或一次性 demo，而是可以�
 
 ## 影响
 
-- `docs/benchmark_platform_design_plan.md` 的首版范围需要包含 Docker Compose 部署骨架、SQLite、OSS 和本地临时缓存策略。
-- 后续 Generator 实现部署相关 sprint 时，应创建 `deploy/` 目录和 `.env.example`。
+- `docs/benchmark_platform_design_plan.md` 的首期范围需要包含 SQLite、OSS 和本地临时缓存策略。
+- 后续 Generator 实现 Docker 打包 sprint 时，应创建 `deploy/` 目录和 `.env.example`。
 - Evaluator 在部署 sprint 中必须验证 Compose 服务启动、健康检查、API 可访问、worker 可消费任务、OSS 读写配置和本地临时文件清理。
 
 ## 未决问题
