@@ -2,7 +2,7 @@
 
 Sprint ID：SPRINT-20260527-001-runtime-foundation  
 关联任务：TASK-20260527-001-runtime-smoke-platform  
-状态：agreed
+状态：accepted
 
 ## 本轮目标
 
